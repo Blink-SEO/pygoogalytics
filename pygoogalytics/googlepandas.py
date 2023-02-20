@@ -8,19 +8,13 @@ import datetime
 
 from typing import List, Optional, Union, Pattern
 
-from . import re_patterns
-
-RE_QUESTION = re.compile(re_patterns.QUESTION)
-RE_TRANSACTIONAL = re.compile(re_patterns.TRANSACTION)
-RE_INVESTIGATION = re.compile(re_patterns.INVESTIGATION)
-RE_URL = re.compile(re_patterns.URL)
-RE_C2S = re.compile(r"(?<!^)(?=[A-Z])")
+from . import utils
 
 gpd_logger = logging.getLogger("googlepandas")
 
 
 def camel_to_snake(string: str):
-    return RE_C2S.sub('_', string).lower()
+    return utils.RE_C2S.sub('_', string).lower()
 
 
 GA_Types = {
@@ -222,8 +216,8 @@ class GADataFrame(pd.DataFrame):
                 self['productName'] = self['productName'].apply(lambda s: re.sub(r"\s+", " ", s).strip())
 
             if 'landingPagePath' in self.columns:
-                self['landingPage'] = self['landingPagePath'].apply(re_patterns.strip_url)
-                self['landingPageParameter'] = self['landingPagePath'].apply(re_patterns.url_extract_parameter)
+                self['landingPage'] = self['landingPagePath'].apply(utils.strip_url)
+                self['landingPageParameter'] = self['landingPagePath'].apply(utils.url_extract_parameter)
                 self.rename(columns={'landingPagePath': 'landingPageFull'}, inplace=True)
 
                 join_dimensions = remove_list_item(join_dimensions, 'landingPagePath')
@@ -504,9 +498,9 @@ class GSCDataFrame(pd.DataFrame):
                 self['query'] = self['query'].apply(lambda s: s.lower())
 
             if 'page' in self.columns:
-                self['landing_page_parameter'] = self['page'].apply(re_patterns.url_extract_parameter)
-                self['landing_page'] = self['page'].apply(re_patterns.strip_url)
-                self['landing_page_nodomain'] = self['page'].apply(re_patterns.url_strip_domain)
+                self['landing_page_parameter'] = self['page'].apply(utils.url_extract_parameter)
+                self['landing_page'] = self['page'].apply(utils.strip_url)
+                self['landing_page_nodomain'] = self['page'].apply(utils.url_strip_domain)
                 self.rename(columns={'page': 'landing_page_full'}, inplace=True)
 
         if from_gsc_response is False and df_input is not None:
@@ -632,21 +626,21 @@ class GSCDataFrame(pd.DataFrame):
 
 
 def is_question(query: str) -> bool:
-    if RE_QUESTION.match(query):
+    if utils.RE_QUESTION.match(query):
         return True
     else:
         return False
 
 
 def is_transactional(query: str) -> bool:
-    if RE_TRANSACTIONAL.match(query):
+    if utils.RE_TRANSACTIONAL.match(query):
         return True
     else:
         return False
 
 
 def is_investigation(query: str) -> bool:
-    if RE_INVESTIGATION.match(query):
+    if utils.RE_INVESTIGATION.match(query):
         return True
     else:
         return False

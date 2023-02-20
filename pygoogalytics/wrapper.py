@@ -3,13 +3,13 @@ import logging
 import re
 import datetime
 import json
-from typing import List, Tuple, Union, Optional, Any
+from typing import List, Union, Optional
 
 from googleapiclient.errors import HttpError as GoogleApiHttpError
 import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
-from . import date_utils
+from . import utils
 
 
 class GoogalyticsWrapper:
@@ -54,10 +54,10 @@ class GoogalyticsWrapper:
 
         _dates_test = self.check_available_dates
 
-        gsc_date_range_str = date_utils.date_range_string(dates=_dates_test.get("GSC"),
-                                                          alternate_text="No dates available from GSC")
-        ga3_date_range_str = date_utils.date_range_string(dates=_dates_test.get("GA"),
-                                                          alternate_text="No dates available from GA3")
+        gsc_date_range_str = utils.date_range_string(dates=_dates_test.get("GSC"),
+                                                     alternate_text="No dates available from GSC")
+        ga3_date_range_str = utils.date_range_string(dates=_dates_test.get("GA"),
+                                                     alternate_text="No dates available from GA3")
 
         return {
             "API config": {
@@ -217,7 +217,7 @@ class GoogalyticsWrapper:
 
         try:
             gsc_response = self.gsc_resource.searchanalytics().query(siteUrl=self.sc_domain,
-                                                                body=gsc_request).execute()
+                                                                     body=gsc_request).execute()
         except GoogleApiHttpError as http_error:
             if re.match(".*user does not have sufficient permissions", repr(http_error).lower()):
                 self.logger.error(
@@ -751,4 +751,3 @@ class GoogalyticsWrapper:
         for _i, url in enumerate(url_list):
             _frames.append(self.urlinspection_dict(url, inspection_index=_i))
         return pd.DataFrame(_frames)
-
