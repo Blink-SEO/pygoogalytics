@@ -10,6 +10,7 @@ import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
 from . import utils
+from . import pga_logger
 
 
 class GoogalyticsWrapper:
@@ -19,9 +20,7 @@ class GoogalyticsWrapper:
                  ga4_data_client,
                  sc_domain: str = None,
                  view_id: str = None,
-                 ga4_property_id: str = None,
-                 logging_handler_console: logging.FileHandler = None,
-                 logging_handler_error_log: logging.FileHandler = None):
+                 ga4_property_id: str = None):
 
         self.sc_domain: str = sc_domain
         self.view_id: str = view_id
@@ -35,13 +34,7 @@ class GoogalyticsWrapper:
         self.ga3_resource = ga3_resource
         self.ga4_data_client = ga4_data_client
 
-        self.logger = logging.getLogger("gapi_wrapper")
-        if logging_handler_console:
-            self.logger.addHandler(logging_handler_console)
-        if logging_handler_error_log:
-            self.logger.addHandler(logging_handler_error_log)
-        self.logger.debug(f"{self.__class__.__name__}.__init__() :: "
-                          f"initialising GoogalyticsWrapper object")
+        pga_logger.debug(f"initialising GoogalyticsWrapper object")
 
     # *****************************************************************
     # *** GAPI_WRAPPER STATS ******************************************
@@ -66,10 +59,10 @@ class GoogalyticsWrapper:
                 "GA4 Property ID": self.ga4_property_id
             },
             "API status": {
-                "GSC status": _gsc_api_status,
-                "GA3 status": _ga3_api_status,
-                "GSC error": _gsc_api_error,
-                "GA3 error": _ga3_api_error
+                "GSC status": self.api_test_gsc.get('status'),
+                "GA3 status": self.api_test_ga3.get('status'),
+                "GSC error": self.api_test_gsc.get('error'),
+                "GA3 error": self.api_test_ga3.get('error')
             },
             "Available datas": {
                 "GSC": gsc_date_range_str,
@@ -96,7 +89,7 @@ class GoogalyticsWrapper:
 
     def _perform_api_test_gsc(self):
         """test GSC API"""
-        self.logger.debug(f"{self.__class__.__name__}.api_test() :: testing GSC api")
+        pga_logger.debug(f"{self.__class__.__name__}.api_test() :: testing GSC api")
 
         _api_error = None
 
@@ -104,15 +97,15 @@ class GoogalyticsWrapper:
             _ = self.get_gsc_response(start_date=datetime.date.today() + datetime.timedelta(days=-7),
                                       raise_http_error=True)
             _api_status = "Success"
-            self.logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api successful")
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api successful")
         except GoogleApiHttpError as http_e:
             _api_status = "HttpError"
             _api_error = http_e.reason.split('See also')[0]
-            self.logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api failed")
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api failed")
         except Exception as http_e:
             _api_status = "Other Error"
             _api_error = repr(http_e)
-            self.logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api failed")
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api failed")
             # The HttpError for GSC contains this unhelpful "See also this answer to a question..."
             # which is just a link to an FAQ with a 404 error
 
@@ -132,7 +125,7 @@ class GoogalyticsWrapper:
 
     def _perform_api_test_ga3(self):
         """test GA API"""
-        self.logger.debug(f"{self.__class__.__name__}.api_test() :: testing GA api")
+        pga_logger.debug(f"{self.__class__.__name__}.api_test() :: testing GA api")
         _api_error = None
         if not self.view_id:
             _api_status = "No view id"
@@ -140,15 +133,15 @@ class GoogalyticsWrapper:
             _ = self.get_ga3_response(start_date=datetime.date.today() + datetime.timedelta(days=-7),
                                       raise_http_error=True)
             _api_status = "Success"
-            self.logger.debug(f"{self.__class__.__name__}.api_test() :: GA api successful")
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api successful")
         except GoogleApiHttpError as http_e:
             _api_status = "HttpError"
             _api_error = repr(http_e)
-            self.logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
         except Exception as http_e:
             _api_status = "Other Error"
             _api_error = repr(http_e)
-            self.logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
         self._api_test_ga3 = _api_status, _api_error
 
     @property
@@ -220,7 +213,7 @@ class GoogalyticsWrapper:
                                                                      body=gsc_request).execute()
         except GoogleApiHttpError as http_error:
             if re.match(".*user does not have sufficient permissions", repr(http_error).lower()):
-                self.logger.error(
+                pga_logger.error(
                     f"{self.__class__.__name__}.get_gsc_response() :: user does not have sufficient permissions")
             if raise_http_error:
                 raise http_error
@@ -236,7 +229,7 @@ class GoogalyticsWrapper:
             _rows = None
 
         if _rows is None:
-            self.logger.debug(f"{self.__class__.__name__}.get_gsc_response() :: empty gsc response")
+            pga_logger.debug(f"{self.__class__.__name__}.get_gsc_response() :: empty gsc response")
             if _print_log:
                 print(f"{self.__class__.__name__}.get_gsc_response() :: empty gsc response")
             # raise EmptyResponseError("GSC", start_date=start_date, end_date=end_date)
@@ -258,7 +251,7 @@ class GoogalyticsWrapper:
         if not self.view_id:
             # If there is no view_id we stop here and return None,
             # unless raise_http_error is True, in which case we continue to the execution and see what errors come up
-            self.logger.warning(f"{self.__class__.__name__}.get_ga3_response() :: view id is not set")
+            pga_logger.warning(f"{self.__class__.__name__}.get_ga3_response() :: view id is not set")
             if not raise_http_error:
                 return None
 
@@ -333,14 +326,14 @@ class GoogalyticsWrapper:
         try:
             ga3_response = self.ga3_resource.reports().batchGet(body=ga3_request).execute()
             if return_raw_response:
-                self.logger.info(f"{self.__class__.__name__}.get_ga3_response() :: returning raw response")
+                pga_logger.info(f"{self.__class__.__name__}.get_ga3_response() :: returning raw response")
                 return ga3_response
         except GoogleApiHttpError as http_error:
             if re.match(".*user does not have sufficient permissions", repr(http_error).lower()):
-                self.logger.error(
+                pga_logger.error(
                     f"{self.__class__.__name__}.get_ga3_response() :: user does not have sufficient permissions")
             if re.match(".*viewid must be set", repr(http_error).lower()):
-                self.logger.error(f"{self.__class__.__name__}.get_ga3_response() :: view id is not set")
+                pga_logger.error(f"{self.__class__.__name__}.get_ga3_response() :: view id is not set")
 
             if raise_http_error:
                 raise http_error
@@ -353,7 +346,7 @@ class GoogalyticsWrapper:
             _rows = None
 
         if _rows is None:
-            self.logger.debug(f"{self.__class__.__name__}.get_ga3_response() :: empty ga response")
+            pga_logger.debug(f"{self.__class__.__name__}.get_ga3_response() :: empty ga response")
             # raise EmptyResponseError("GA", start_date=start_date, end_date=end_date)
             return None
 
@@ -371,7 +364,7 @@ class GoogalyticsWrapper:
         if not self.ga4_property_id:
             # If there is no view_id we stop here and return None,
             # unless raise_http_error is True, in which case we continue to the execution and see what errors come up
-            self.logger.warning(f"{self.__class__.__name__}.get_ga4_response() :: ga4_property_id is not set")
+            pga_logger.warning(f"{self.__class__.__name__}.get_ga4_response() :: ga4_property_id is not set")
             if not raise_http_error:
                 return None
 
@@ -407,7 +400,7 @@ class GoogalyticsWrapper:
         )
         ga4_response = self.ga4_data_client.run_report(request)
         if return_raw_response:
-            self.logger.info(f"{self.__class__.__name__}.get_ga4_response() :: returning raw response")
+            pga_logger.info(f"{self.__class__.__name__}.get_ga4_response() :: returning raw response")
             return ga4_response
 
         return ga4_response
@@ -745,7 +738,7 @@ class GoogalyticsWrapper:
                               url_list: List[str]) -> pd.DataFrame:
         if isinstance(url_list, str):
             url_list = [url_list]
-        self.logger.info(f"{self.__class__.__name__}.get_urlinspection_df() :: "
+        pga_logger.info(f"{self.__class__.__name__}.get_urlinspection_df() :: "
                          f"requesting url inspection for {len(url_list)} urls")
         _frames = []
         for _i, url in enumerate(url_list):
