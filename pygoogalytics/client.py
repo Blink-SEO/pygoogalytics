@@ -77,5 +77,5 @@ class Client:
     def __repr__(self):
         _s = 'PyGoogalytics Client object:\n'
         for _k, _v in self.__dict__().items():
-            _s += " - {_k}: {_v}"
+            _s += f" - {_k}: {_v}\n"
         return _s
