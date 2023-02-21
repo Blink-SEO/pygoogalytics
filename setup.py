@@ -7,6 +7,7 @@ setup(
     name='pygoogalytics',
     version='0.1.3',
     description=_desc,
+    long_description=open('README.md').read(),
     url='https://github.com/Blink-SEO/pygoogalytics',
     author='Joshua Prettyman',
     author_email='joshua@blinkseo.co.uk',
