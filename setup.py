@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='pygoogalytics',
-    version='0.1.2',
+    version='0.1.3',
     description='',
     url='https://github.com/Blink-SEO/pygoogalytics',
     author='Joshua Prettyman',
