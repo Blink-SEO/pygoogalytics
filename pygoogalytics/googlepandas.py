@@ -70,7 +70,7 @@ def from_response(response: dict,
     if response_type is None:
         response_type = get_response_type(response)
 
-    if response_type == 'GA':
+    if response_type == 'GA3':
         rows = response.get('reports', [])[report_index]['data']['rows']
         dimensions = response.get('reports')[report_index].get('columnHeader').get('dimensions')
         _metric_header_entries = response.get('reports')[report_index] \

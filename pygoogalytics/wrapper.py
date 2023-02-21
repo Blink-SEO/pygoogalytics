@@ -3,7 +3,7 @@ import logging
 import re
 import datetime
 import json
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Tuple
 
 from googleapiclient.errors import HttpError as GoogleApiHttpError
 import google.analytics.data_v1beta.types as ga_data_types
@@ -14,10 +14,17 @@ from . import pga_logger
 
 
 class GoogalyticsWrapper:
+    """
+    The GoogalyticsWrapper requires the following arguments to access data:
+    - for GSC data: sc_domain. This is the url-like string you see in the Google Search Console web application
+    when selecting the site. It is either a full url (e.g. `https://www.example.com/`) or something like `sc_domain:example.com`
+    - for GA3 data: the "view_id" you see in "settings" on the GA web application. This is usually an 8- or 9-digit number, passed as a string
+    - for GA4 data: the ga4 property id.
+    """
     def __init__(self,
                  gsc_resource,
                  ga3_resource,
-                 ga4_data_client,
+                 ga4_resource,
                  sc_domain: str = None,
                  view_id: str = None,
                  ga4_property_id: str = None):
@@ -32,24 +39,18 @@ class GoogalyticsWrapper:
 
         self.gsc_resource = gsc_resource
         self.ga3_resource = ga3_resource
-        self.ga4_data_client = ga4_data_client
+        self.ga4_resource = ga4_resource
 
         pga_logger.debug(f"initialising GoogalyticsWrapper object")
 
     # *****************************************************************
     # *** GAPI_WRAPPER STATS ******************************************
 
-    @property
-    def __repr_dict__(self) -> dict:
-
-        _gsc_api_status, _gsc_api_error = self.api_test_gsc
-        _ga3_api_status, _ga3_api_error = self.api_test_ga3
-
-        _dates_test = self.check_available_dates
-
+    def __dict__(self) -> dict:
+        _dates_test = self.available_dates
         gsc_date_range_str = utils.date_range_string(dates=_dates_test.get("GSC"),
                                                      alternate_text="No dates available from GSC")
-        ga3_date_range_str = utils.date_range_string(dates=_dates_test.get("GA"),
+        ga3_date_range_str = utils.date_range_string(dates=_dates_test.get("GA3"),
                                                      alternate_text="No dates available from GA3")
 
         return {
@@ -71,19 +72,21 @@ class GoogalyticsWrapper:
         }
 
     def __repr__(self):
-        return json.dumps(self.__repr_dict__, indent=2)
+        _s = "GoogalyticsWrapper object:\n"
+        _s += json.dumps(self.__dict__(), indent=2)
+        return _s
 
     @property
     def api_summary(self) -> dict:
-        _dates_test = self.check_available_dates
+        _dates_test = self.available_dates
         _sc_domain = ""
         if re.match("sc-domain:.+", self.sc_domain):
             _sc_domain = self.sc_domain
         return {"GA view id": self.view_id,
                 "sc-domain": _sc_domain,
-                "GA API": self.api_test_ga3.get('status'),
+                "GA3 API": self.api_test_ga3.get('status'),
                 "GSC API": self.api_test_gsc.get('status'),
-                "GA dates": len(_dates_test.get("GA")),
+                "GA3 dates": len(_dates_test.get("GA3")),
                 "GSC dates": len(_dates_test.get("GSC")),
                 }
 
@@ -109,7 +112,7 @@ class GoogalyticsWrapper:
             # The HttpError for GSC contains this unhelpful "See also this answer to a question..."
             # which is just a link to an FAQ with a 404 error
 
-        self._api_test_gsc = {'status': _api_status, 'error': _api_error}
+        self._api_test_gsc = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.now()}
 
     @property
     def api_test_gsc(self) -> dict:
@@ -119,7 +122,7 @@ class GoogalyticsWrapper:
 
     @property
     def api_test_ga3(self) -> dict:
-        if self._api_test_ga3.get('status') is None:
+        if self._api_test_ga3.get('status') is None or not utils.test_time(self._api_test_ga3.get('timestamp'), 3600):
             self._perform_api_test_ga3()
         return self._api_test_ga3
 
@@ -142,7 +145,7 @@ class GoogalyticsWrapper:
             _api_status = "Other Error"
             _api_error = repr(http_e)
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
-        self._api_test_ga3 = _api_status, _api_error
+        self._api_test_ga3 = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.now()}
 
     @property
     def api_test_ga4(self) -> dict:
@@ -151,10 +154,11 @@ class GoogalyticsWrapper:
     # *****************************************************************************************
 
     @property
-    def check_available_dates(self) -> dict:
+    def available_dates(self) -> dict:
         gsc_date_list: List[datetime.date] = self.get_dates(result="GSC")
-        ga_date_list: List[datetime.date] = self.get_dates(result="GA")
-        return {"GA": ga_date_list, "GSC": gsc_date_list}
+        ga3_date_list: List[datetime.date] = self.get_dates(result="GA3")
+        ga4_date_list: List[datetime.date] = self.get_dates(result="GA4")
+        return {"GA3": ga3_date_list, "GA4": ga4_date_list, "GSC": gsc_date_list}
 
     # *** Calls to Google API *****************************************************************
 
@@ -244,9 +248,57 @@ class GoogalyticsWrapper:
                          ga_metrics: Optional[Union[List[str], str]] = None,
                          ga_filters: Optional[dict] = None,
                          filter_google_organic: bool = False,
-                         raise_http_error: bool = False,
-                         return_raw_response: bool = False,
-                         _print_log: bool = False):
+                         _print_log: bool = False) -> dict:
+
+        r = self._ga3_response_raw(
+            start_date=start_date,
+            end_date=end_date,
+            ga_dimensions=ga_dimensions,
+            ga_metrics=ga_metrics,
+            ga_filters=ga_filters,
+            filter_google_organic=filter_google_organic,
+            page_token=None
+        )
+        data = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
+        column_header = r.get('reports', [{}])[0].get('columnHeader')
+        next_page_token = r.get('reports', [{}])[0].get('nextPageToken')
+
+        while next_page_token:
+            r = self._ga3_response_raw(
+                start_date=start_date,
+                end_date=end_date,
+                ga_dimensions=ga_dimensions,
+                ga_metrics=ga_metrics,
+                ga_filters=ga_filters,
+                filter_google_organic=filter_google_organic,
+                page_token=next_page_token
+            )
+            _d = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
+            data.extend(_d)
+            next_page_token = r.get('reports', [{}])[0].get('nextPageToken')
+
+        synthetic_response = {
+            'reports': [
+                {
+                    'columnHeader': column_header,
+                    'data': {'rows': data}
+                }
+            ]
+        }
+
+        return synthetic_response
+
+    def _ga3_response_raw(self,
+                          start_date: Union[str, datetime.date],
+                          end_date: Optional[Union[str, datetime.date]] = None,
+                          ga_dimensions: Optional[Union[List[str], str]] = None,
+                          ga_metrics: Optional[Union[List[str], str]] = None,
+                          ga_filters: Optional[dict] = None,
+                          filter_google_organic: bool = False,
+                          raise_http_error: bool = False,
+                          return_raw_response: bool = False,
+                          page_token: str = None,
+                          _print_log: bool = False):
 
         if not self.view_id:
             # If there is no view_id we stop here and return None,
@@ -307,21 +359,23 @@ class GoogalyticsWrapper:
                 "sortOrder": 'DESCENDING'
             })
 
-        ga3_request = {
-            'reportRequests': [
-                {
-                    'viewId': self.view_id,
-                    'dateRanges': [{'startDate': start_date_string, 'endDate': end_date_string}],
-                    # 'dimensions': [{'name': 'ga:productName'}],
-                    # 'metrics': [{'expression': 'ga:itemRevenue'}]
-                    'dimensions': [{'name': _d} for _d in ga_dimensions],
-                    "dimensionFilterClauses": _dfc,
-                    "metricFilterClauses": _mfc,
-                    "orderBys": _orderby,
-                    'metrics': [{'expression': _m} for _m in ga_metrics],
-                    'pageSize': 100000
-                }]
+        _request_dict = {
+            'viewId': self.view_id,
+            'dateRanges': [{'startDate': start_date_string, 'endDate': end_date_string}],
+            # 'dimensions': [{'name': 'ga:productName'}],
+            # 'metrics': [{'expression': 'ga:itemRevenue'}]
+            'dimensions': [{'name': _d} for _d in ga_dimensions],
+            "dimensionFilterClauses": _dfc,
+            "metricFilterClauses": _mfc,
+            "orderBys": _orderby,
+            'metrics': [{'expression': _m} for _m in ga_metrics],
+            'pageSize': 100000
         }
+
+        if page_token:
+            _request_dict.update({'pageToken': page_token})
+
+        ga3_request = {'reportRequests': [_request_dict]}
 
         try:
             ga3_response = self.ga3_resource.reports().batchGet(body=ga3_request).execute()
@@ -398,7 +452,7 @@ class GoogalyticsWrapper:
             metrics=metrics,
             date_ranges=[ga_data_types.DateRange(start_date=start_date_string, end_date=end_date_string)],
         )
-        ga4_response = self.ga4_data_client.run_report(request)
+        ga4_response = self.ga4_resource.run_report(request)
         if return_raw_response:
             pga_logger.info(f"{self.__class__.__name__}.get_ga4_response() :: returning raw response")
             return ga4_response
@@ -466,9 +520,16 @@ class GoogalyticsWrapper:
                filters: List[dict] = None,
                add_boolean_metrics: bool = False
                ) -> Union[gpd.GADataFrame, gpd.GSCDataFrame, pd.DataFrame]:
+        """
+        The `get_df` method accepts the following values for the `result` argument:
+        - "GSC": for Google Search Console data
+        - "GA3": for Google Analytics 3 (UA) data
+        - "URL": for Google Search Console URL inspection data
+        - "GA4": for Google Analytics 4 data (note, this is not yet available in production)
+        """
 
         if start_date is None:
-            if result in ("GSC", "GSCQ", "GSC_LP"):
+            if result == "GSC":
                 start_date = datetime.date.today() + datetime.timedelta(days=-3)
             else:
                 start_date = datetime.date.today()
@@ -489,8 +550,14 @@ class GoogalyticsWrapper:
             url_list = [url_list]
 
         if re.match(r"GA4", result):
-            pass
-        elif re.match(r"GA", result):
+            return self._get_ga4_df(start_date=start_date,
+                                    end_date=end_date,
+                                    ga_dimensions=dimensions,
+                                    ga_metrics=metrics,
+                                    add_boolean_metrics=add_boolean_metrics,
+                                    filter_google_organic=filter_google_organic,
+                                    filters=filters)
+        elif re.match(r"GA3", result):
             return self._get_ga3_df(start_date=start_date,
                                     end_date=end_date,
                                     ga_dimensions=dimensions,
@@ -579,11 +646,7 @@ class GoogalyticsWrapper:
                     add_boolean_metrics: bool = True) -> Optional[gpd.GSCDataFrame]:
 
         if gsc_dimensions is None:
-            gsc_dimensions = ['date',
-                              'country',
-                              'device',
-                              'page',
-                              'query']
+            gsc_dimensions = ['date', 'country', 'device', 'page', 'query']
 
         gsc_df = self._get_gsc_df_raw(start_date=start_date,
                                       end_date=end_date,
@@ -599,6 +662,21 @@ class GoogalyticsWrapper:
             gsc_df.add_investigation_column()
 
         return gsc_df
+
+    def _get_ga4_df(self,
+                    start_date: datetime.date,
+                    end_date: datetime.date,
+                    ga_dimensions: Optional[List[str]] = None,
+                    ga_metrics: Optional[List[str]] = None,
+                    add_boolean_metrics: bool = True,
+                    filters: Optional[dict] = None,
+                    filter_google_organic: bool = False) -> Optional[gpd.GADataFrame]:
+        _df = gpd.GADataFrame(df_input=None,
+                              dimensions=ga_dimensions,
+                              metrics=ga_metrics,
+                              start_date=start_date,
+                              end_date=end_date)
+        return _df
 
     def _get_ga3_df(self,
                     start_date: datetime.date,
@@ -630,17 +708,19 @@ class GoogalyticsWrapper:
 
         frames = []
         for metrics in metrics_list:
-            ga3_response = self.get_ga3_response(start_date=start_date,
-                                                 end_date=end_date,
-                                                 ga_dimensions=ga_dimensions,
-                                                 ga_metrics=metrics,
-                                                 ga_filters=filters,
-                                                 filter_google_organic=filter_google_organic)
+            ga3_response = self.get_ga3_response(
+                start_date=start_date,
+                end_date=end_date,
+                ga_dimensions=ga_dimensions,
+                ga_metrics=metrics,
+                ga_filters=filters,
+                filter_google_organic=filter_google_organic
+            )
 
             if ga3_response is not None:
                 # Make a dataframe of the ga response
                 ga3_df = gpd.from_response(response=ga3_response,
-                                           response_type="GA",
+                                           response_type="GA3",
                                            start_date=start_date,
                                            end_date=end_date)
             else:
@@ -739,7 +819,7 @@ class GoogalyticsWrapper:
         if isinstance(url_list, str):
             url_list = [url_list]
         pga_logger.info(f"{self.__class__.__name__}.get_urlinspection_df() :: "
-                         f"requesting url inspection for {len(url_list)} urls")
+                        f"requesting url inspection for {len(url_list)} urls")
         _frames = []
         for _i, url in enumerate(url_list):
             _frames.append(self.urlinspection_dict(url, inspection_index=_i))

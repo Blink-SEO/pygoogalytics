@@ -1,37 +1,44 @@
-# API utilities
+# - Google Analytics API wrapper
 
-## - Google API wrapper
+`client.py` defines the class `Client` which builds `googleapiclient.discovery` resources for accessing 
+Google Search Console and Google Analytics 3 (UA) data from the respective APIs, 
+and also `google.analytics.data_v1beta.BetaAnalyticsDataClient` resource for accessing GA4 data, although 
+currently this is only for testing.
 
-`google_api_wrapper.py` defines the class `GapiWrapper` with 
-methods to access data from the GA3 (UA), GSC and GA4 APIs via the 
-python clients.
+Before using this python package you must [create a service account and download a JSON key file](https://developers.google.com/analytics/devguides/reporting/core/v4/quickstart/service-py#1_enable_the_api)
+following the instructions from Google. This process will also give you a service account email address,
+you need to add this email address to the user list for the Analytics or Search Console account for which you 
+want to obtain data — you only need to give the service account "read" access. 
 
-The GA4 client is an instance of the `BetaAnalyticsDataClient` class from ``google.analytics.data_v1beta`
-provided by Google. The "Beta" part leads one to believe this is not a finished product 
-so updates will have to be made.
+A `Client` class can create a `GoogalyticsWrapper` object which has methods to access data 
+the Google services and return a pandas dataframe. 
 
-The class `GapiWrapper` references the global variables `GA3_RESOURCE`, `GSC_RESOURCE` and `GA4_DATA_CLIENT` 
-imported from the main module, but takes parameters
-- sc_domain
-- view_id
-- ga4_property_id
+A typical implementation will look like:
+```python
+from pygoogalytics.client import Client
 
-so that each instance is particular to a client defined by these three parameters.
+googalytics_client = Client(key_file_path='<path-to-your-key-file>')
+g_wrapper = googalytics_client.wrapper(
+  sc_domain='<search-console-domain>', 
+  view_id='<ga3-view-id>', 
+  ga4_property_id='<ga4-property-id>'
+)
 
-Using the methods of the global "client" objects, and passing 
-the client-specific parameters, the GapiWrapper accesses data for
-a particular client.
+ga3_dataframe = g_wrapper.get_df(
+  result='GA3', 
+  start_date='2023-01-01', 
+  end_date='2023-01-07', 
+  metrics=['ga:itemRevenue', 'ga:itemQuantity', 'ga:users'],
+  dimensions=['ga:dateHourMinute', 'ga:landingPagePath', 'ga:sourceMedium', 'ga:countryIsoCode']
+)
+```
 
-All data can be accessed using the method `get_df(result)` 
-which returns a pandas dataframe, with the argument `result` 
-determining which of GA3, GA4, GSC or GSC (url inspection) 
-is accessed. Optional arguments of `get_df` are
-- `dimensions` and `metrics` — for GA and GSC data.
-- `start_date` and `end_date` — to make an API request for
-  a given date range (for GA and GSC data).
-- `url_list` can be passed when `result='URL'` 
-  (i.e. requesting data from GSC url inspection) 
-  to request an inspection for specified urls.
+The `get_df` method accepts the following values for the `result` argument:
+- "GSC": for Google Search Console data
+- "GA3": for Google Analytics 3 (UA) data
+- "URL": for Google Search Console URL inspection data
+- "GA4": for Google Analytics 4 data (note, this is not yet available in production)
+
 
 ## - Google Pandas
 
@@ -40,9 +47,3 @@ both children of pandas `DataFrame` specific to storing
 GA and GSC data with additional metadata fields 
 (e.g. `dimensions` and `metrics`) and methods for adding columns 
 and filtering by particular metrics.
-
-
-
-
-
-

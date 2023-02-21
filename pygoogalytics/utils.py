@@ -58,3 +58,13 @@ def date_range(dates: List[datetime.date]) -> Tuple[datetime.date, datetime.date
     _days = (_max - _min).days
     _coverage = len(set(dates))/_days
     return _min, _max, _days, _coverage
+
+
+def test_time(t: datetime.datetime, seconds: float) -> Optional[bool]:
+    if not isinstance(t, datetime.datetime):
+        return None
+    _diff = (datetime.datetime.now() - t).seconds
+    if _diff < seconds:
+        return True
+    else:
+        return False
