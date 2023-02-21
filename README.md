@@ -1,4 +1,4 @@
-# - Google Analytics API wrapper
+# Google Analytics API wrapper
 
 `client.py` defines the class `Client` which builds `googleapiclient.discovery` resources for accessing 
 Google Search Console and Google Analytics 3 (UA) data from the respective APIs, 
@@ -40,7 +40,17 @@ The `get_df` method accepts the following values for the `result` argument:
 - "GA4": for Google Analytics 4 data (note, this is not yet available in production)
 
 
-## - Google Pandas
+## Advantages of PyGoogalytics
+
+1. When using the REST API for GA3 (UA) data one is allowed to request only 10 metrics at once. 
+The PyGoogalytics wrapper allows the passing of any number of compatible dimensions and metrics,
+when more than ten metrics are passed, the list is partitioned into sub-lists of length 10
+and separate API calls are made for each partition, the resulting dataframes are then joined 
+on the dimensions to create a seamless dataframe with all requested metrics.
+2. Both the Search Console and GA3 APIs can return a maximum of 100k rows of data. The PyGoogalytics wrapper 
+automatically paginates the requests and concatenates the results to return a dataframe of arbitrary length.
+
+## Google Pandas
 
 `googlepandas.py` provides the classes `GADataFrame` and `GSCDataFrame`, 
 both children of pandas `DataFrame` specific to storing 
