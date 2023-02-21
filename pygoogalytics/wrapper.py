@@ -82,7 +82,7 @@ class GoogalyticsWrapper:
         _sc_domain = ""
         if re.match("sc-domain:.+", self.sc_domain):
             _sc_domain = self.sc_domain
-        return {"GA view id": self.view_id,
+        return {"GA3 view id": self.view_id,
                 "sc-domain": _sc_domain,
                 "GA3 API": self.api_test_ga3.get('status'),
                 "GSC API": self.api_test_gsc.get('status'),
@@ -247,6 +247,7 @@ class GoogalyticsWrapper:
                          ga_dimensions: Optional[Union[List[str], str]] = None,
                          ga_metrics: Optional[Union[List[str], str]] = None,
                          ga_filters: Optional[dict] = None,
+                         raise_http_error: bool = False,
                          filter_google_organic: bool = False,
                          _print_log: bool = False) -> dict:
 
@@ -257,6 +258,7 @@ class GoogalyticsWrapper:
             ga_metrics=ga_metrics,
             ga_filters=ga_filters,
             filter_google_organic=filter_google_organic,
+            raise_http_error=raise_http_error,
             page_token=None
         )
         data = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
@@ -271,6 +273,7 @@ class GoogalyticsWrapper:
                 ga_metrics=ga_metrics,
                 ga_filters=ga_filters,
                 filter_google_organic=filter_google_organic,
+                raise_http_error=raise_http_error,
                 page_token=next_page_token
             )
             _d = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
@@ -401,7 +404,7 @@ class GoogalyticsWrapper:
 
         if _rows is None:
             pga_logger.debug(f"{self.__class__.__name__}.get_ga3_response() :: empty ga response")
-            # raise EmptyResponseError("GA", start_date=start_date, end_date=end_date)
+            # raise EmptyResponseError("GA3", start_date=start_date, end_date=end_date)
             return None
 
         return ga3_response
@@ -462,7 +465,8 @@ class GoogalyticsWrapper:
     def get_dates(self,
                   result: str,
                   start_date: Optional[Union[datetime.date, str, int]] = None,
-                  end_date: Optional[Union[datetime.date, str]] = None) -> List[datetime.date]:
+                  end_date: Optional[Union[datetime.date, str]] = None,
+                  reverse: bool = False) -> List[datetime.date]:
 
         # set the end_date to yesterday by default.
         # GA data is "available" for today but it is not the whole day.
@@ -477,7 +481,7 @@ class GoogalyticsWrapper:
         if isinstance(start_date, int):
             start_date = end_date + datetime.timedelta(days=-1 * start_date)
 
-        if re.match(r"GA", result):
+        if re.match(r"GA3", result):
             if start_date is None:
                 start_date = datetime.date.today() + datetime.timedelta(days=-1500)
             dimensions = ['ga:date']
@@ -503,7 +507,7 @@ class GoogalyticsWrapper:
         if "record_date" not in _df.columns or len(_df) == 0:
             return []
         else:
-            return sorted(list(_df["record_date"]))
+            return sorted(list(_df["record_date"]), reverse=reverse)
 
     # *****************************************************************************************
     # *** Return dataframe *****************************************************************
