@@ -1,9 +1,12 @@
 from setuptools import setup
 
+_desc = """PyGoogalytics allows a user to quickly and simply download Google Analytics and Google Search Console data
+in the form of a pandas dataframe."""
+
 setup(
     name='pygoogalytics',
     version='0.1.3',
-    description='',
+    description=_desc,
     url='https://github.com/Blink-SEO/pygoogalytics',
     author='Joshua Prettyman',
     author_email='joshua@blinkseo.co.uk',
