@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='pygoogalytics',
-    version='0.1.0',
+    version='0.1.1',
     description='',
     url='https://github.com/Blink-SEO/pygoogalytics',
     author='Joshua Prettyman',
@@ -15,9 +15,11 @@ setup(
         'google-analytics-data'
     ],
     classifiers=[
+        "Intended Audience :: Developers",
         'Development Status :: 1 - Planning',
         'License :: OSI Approved :: MIT License',
-        'Operating System :: POSIX :: Linux',
+        "Operating System :: OS Independent",
+        "Programming Language :: Python",
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
     ],
@@ -25,4 +27,5 @@ setup(
 
 # python setup.py check
 # python setup.py sdist
+# python setup.py bdist_wheel --universal
 # twine upload dist/*
