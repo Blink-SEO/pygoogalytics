@@ -486,6 +486,11 @@ class GoogalyticsWrapper:
                 start_date = datetime.date.today() + datetime.timedelta(days=-1500)
             dimensions = ['ga:date']
             metrics = ['ga:sessions']
+        elif re.match(r"GA4", result):
+            if start_date is None:
+                start_date = datetime.date.today() + datetime.timedelta(days=-1500)
+            dimensions = ['date']
+            metrics = ['sessions']
         elif re.match(r"GSC", result):
             if start_date is None:
                 start_date = datetime.date.today() + datetime.timedelta(days=-500)
