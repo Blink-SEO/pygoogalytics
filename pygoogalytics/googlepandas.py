@@ -743,7 +743,7 @@ def iso_code_2_to_3(iso_code: str):
     elif iso_code == "US":
         return "USA"
     else:
-        with open(os.path.dirname(__file__) + r'/country_iso_codes.csv', mode='r') as infile:
+        with open(os.path.join(os.path.dirname(__file__), 'data/country_iso_codes.csv'), mode='r') as infile:
             reader = csv.reader(infile)
             isodict = {rows[1]: rows[2] for rows in reader}
         return isodict.get(iso_code, 'ZZZ')
