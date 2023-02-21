@@ -1,3 +1,10 @@
+### Installation
+
+PyGoogalytics can be installed using pip:
+```shell
+pip install -U pygoogalytics
+```
+
 # Google Analytics API wrapper
 
 `client.py` defines the class `Client` which builds `googleapiclient.discovery` resources for accessing 
