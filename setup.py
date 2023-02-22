@@ -5,7 +5,7 @@ in the form of a pandas dataframe."""
 
 setup(
     name='pygoogalytics',
-    version='0.1.3',
+    version='0.1.4',
     description=_desc,
     long_description=open('README.md').read(),
     url='https://github.com/Blink-SEO/pygoogalytics',
