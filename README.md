@@ -49,13 +49,29 @@ The `get_df` method accepts the following values for the `result` argument:
 
 ## Advantages of PyGoogalytics
 
-1. When using the REST API for GA3 (UA) data one is allowed to request only 10 metrics at once. 
-The PyGoogalytics wrapper allows the passing of any number of compatible dimensions and metrics,
+1. **Simple.** When doing SEO exploration using python we really want to use a Pandas dataframe. We can either 
+download lots of CSV files separately then read them in, or we can use the API. The first is a little fiddly and can
+mean you're not getting the full picture: the GSC web app, for example, has a maximum number of rows you can download
+so you won't see all those long-tail case. The API option can be difficult to interpret for a beginner programmer and 
+comes with its own caveats. PyGoogalytics is a user-friendly wrapper for the API that does GSC and GA3 in one, 
+it returns a Pandas dataframe without any faff about pagination. Having a dataframe allows you to use all the familiar 
+`sort_values`, `groupby`, etc. to analyse your data.
+2. **Compatible.** Pygoogalytics provides a child-class of Pandas (GooglePandas), which interprets the responses from
+the GSC and GA3 APIs. This also standardises column names (all snake_case) so that they match between GA and GSC. It
+also converts the 2-character country ISO codes (e.g. 'US') used by GA3 into 3-character codes (e.g. 'USA') as used by GSC,
+to make it easy to join or merge the two. In this way you could get a dataframe for `country_iso_code`, `landing_page`,
+`ctr` and `position` from GSC, and another from GA3 with `country_iso_code`, `landing_page` and `transaction_revenue`,
+then join on the dimensions (`country_iso_code`, `landing_page`) to get a single data frame with data from both GA3 and GSC.
+3. **More metrics.** When using the API for GA3 (UA) data, you are allowed to request only 10 metrics at once. 
+The PyGoogalytics wrapper allows the passing of any number of compatible dimensions and metrics:
 when more than ten metrics are passed, the list is partitioned into sub-lists of length 10
 and separate API calls are made for each partition, the resulting dataframes are then joined 
 on the dimensions to create a seamless dataframe with all requested metrics.
-2. Both the Search Console and GA3 APIs can return a maximum of 100k rows of data. The PyGoogalytics wrapper 
-automatically paginates the requests and concatenates the results to return a dataframe of arbitrary length.
+4. **More data.** When using the GSC or GA web applications, the data you can output is severely restricted, and
+relies on downloading multiple CSV files. Going the API route is better for small sites, but both the Search Console 
+and GA3 APIs can return a maximum of 100k rows of data, so even if you request one day's data at a time, you might 
+run up to the limit for larger sites and have to paginate your requests. The PyGoogalytics wrapper automatically 
+paginates the requests and concatenates the results to return a single dataframe of arbitrary length. 
 
 ## Google Pandas
 
