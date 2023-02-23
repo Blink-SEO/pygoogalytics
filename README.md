@@ -1,6 +1,6 @@
 ### Installation
 
-PyGoogalytics can be installed using pip:
+PyGoogalytics can be installed using [pip](https://pypi.org/project/pygoogalytics/):
 ```shell
 pip install -U pygoogalytics
 ```
