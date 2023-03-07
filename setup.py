@@ -22,8 +22,8 @@ setup(
     install_requires=[
         'pandas',
         'google-api-python-client>=2.70.0',
-        'google-analytics-data>=0.15.0',
-        'google-ads>=20.0.0',
+        'google-analytics-data==0.16.1',
+        'google-ads==20.0.0',
         'google-api-core==2.11.0'
     ],
     classifiers=[
