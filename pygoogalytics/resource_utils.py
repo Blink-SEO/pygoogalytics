@@ -1,8 +1,25 @@
 import json
+import yaml
+
+from typing import Tuple
 
 from google.oauth2 import service_account  # pip install --upgrade google-auth
 from googleapiclient import discovery  # pip install --upgrade google-api-python-client
 from google.analytics.data_v1beta import BetaAnalyticsDataClient  # pip install google-analytics-data
+from google.ads.googleads.client import GoogleAdsClient
+
+
+def googleads_client_from_key_file(path: str):
+    with open(path, 'rb') as _file:
+        googleads_yaml_string = _file.read().decode('utf8')
+    return googleads_client_from_yaml(googleads_yaml_string=googleads_yaml_string)
+
+
+def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str]:
+    googleads_yaml_dict = yaml.safe_load(googleads_yaml_string)
+    default_customer_id = str(googleads_yaml_dict.get('default_customer_id'))
+    googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version="v12")
+    return googleads_client, default_customer_id
 
 
 def resources_from_key_file(path: str):

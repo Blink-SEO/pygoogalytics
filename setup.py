@@ -1,11 +1,16 @@
 from setuptools import setup
 
+# python setup.py check
+# python setup.py sdist
+# python setup.py bdist_wheel --universal
+# twine upload dist/*
+
 _desc = """PyGoogalytics allows a user to quickly and simply download Google Analytics and Google Search Console data
 in the form of a pandas dataframe."""
 
 setup(
     name='pygoogalytics',
-    version='0.1.4',
+    version='0.2.0',
     description=_desc,
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
@@ -18,6 +23,7 @@ setup(
         'pandas',
         'google-api-python-client',
         'google-analytics-data'
+        'google-ads'
     ],
     classifiers=[
         "Intended Audience :: Developers",
@@ -31,8 +37,3 @@ setup(
     include_package_data=True,
     package_data={'': ['data/*.csv']},
 )
-
-# python setup.py check
-# python setup.py sdist
-# python setup.py bdist_wheel --universal
-# twine upload dist/*

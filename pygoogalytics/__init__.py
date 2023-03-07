@@ -20,9 +20,19 @@ g_wrapper = googalytics_client.wrapper(
 ```
 """
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 __author__ = 'Joshua Prettyman'
 __credits__ = 'Blink SEO'
 
+import os
+import csv
 import logging
+
 pga_logger = logging.getLogger(__name__)
+
+
+with open(os.path.join(os.path.dirname(__file__), 'data', 'google_ads_location_ids.csv'), mode='r') as infile:
+    reader = csv.reader(infile)
+    LOCATION_ID_DICT = {rows[1]: rows[2] for rows in reader}
+
+
