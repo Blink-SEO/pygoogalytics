@@ -7,7 +7,7 @@ from kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
 from . import pga_logger
 
 
-class GoogalticsClient:
+class GoogalyticsClient:
     """
     The Client class holds the credentials for a project
     which can then be used to create a GoogalyticsWrapper object.
