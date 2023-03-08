@@ -2,7 +2,8 @@ from typing import List
 
 from .resource_utils import resources_from_json, resources_from_key_file, \
     googleads_client_from_yaml, googleads_client_from_key_file
-from .googalytics_wrapper import GoogalyticsWrapper, KeywordPlanIdeaService, KeywordPlanService
+from .googalytics_wrapper import GoogalyticsWrapper
+from kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
 from . import pga_logger
 
 
