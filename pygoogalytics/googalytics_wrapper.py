@@ -112,7 +112,7 @@ class GoogalyticsWrapper:
             # The HttpError for GSC contains this unhelpful "See also this answer to a question..."
             # which is just a link to an FAQ with a 404 error
 
-        self._api_test_gsc = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.now()}
+        self._api_test_gsc = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.utcnow()}
 
     @property
     def api_test_gsc(self) -> dict:
@@ -145,7 +145,7 @@ class GoogalyticsWrapper:
             _api_status = "Other Error"
             _api_error = repr(http_e)
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
-        self._api_test_ga3 = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.now()}
+        self._api_test_ga3 = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.utcnow()}
 
     @property
     def api_test_ga4(self) -> dict:
