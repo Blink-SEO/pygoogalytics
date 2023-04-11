@@ -777,7 +777,7 @@ class GoogalyticsWrapper:
         return ga3_df
 
     def urlinspection_dict(self, url: str, inspection_index: int = None) -> dict:
-        _now = datetime.datetime.now()
+        _now = datetime.datetime.utcnow()
         _d = {"record_date": _now.date(),
               "record_time": _now.time(),
               "url": url}
