@@ -1,4 +1,5 @@
 import datetime
+import logging
 import time
 
 import pandas as pd
@@ -58,7 +59,8 @@ class ClientWrapper:
               campaign.id,
               campaign.name
             FROM campaign
-            ORDER BY campaign.id"""
+            ORDER BY campaign.id
+        """
 
         # Issues a search request using streaming.
         stream = self.googleads_service.search_stream(customer_id=self.customer_id, query=query)
@@ -301,6 +303,7 @@ class KeywordPlanService(ClientWrapper):
                             location_codes: List[str] = None,
                             language_id: str = None,
                             print_progress: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
+
         if isinstance(keywords, str):
             keywords = [keywords]
 
@@ -313,9 +316,11 @@ class KeywordPlanService(ClientWrapper):
                 historical_metrics_df, _kwp = self.get_historical_metrics_df(keywords=_keyword_sublist,
                                                                              location_codes=location_codes,
                                                                              language_id=language_id)
-                keyword_plans.append(_kwp)
-                frames.append(historical_metrics_df)
-                self.remove_keyword_plan(keyword_plan_resource_name=_kwp)
+
+                if historical_metrics_df is not None:
+                    keyword_plans.append(_kwp)
+                    frames.append(historical_metrics_df)
+                    self.remove_keyword_plan(keyword_plan_resource_name=_kwp)
 
             except GoogleAdsException:
                 print(f"GoogleAdsException encountered after obtaining {len(frames)} frames")
@@ -335,7 +340,8 @@ class KeywordPlanService(ClientWrapper):
                                                'keyword',
                                                'status',
                                                'volume_trend_tuples']].explode('volume_trend_tuples')
-        monthly_volume_df['volume_trend_tuples'] = monthly_volume_df['volume_trend_tuples'].apply(_check_volume_trend_tuples)
+        monthly_volume_df['volume_trend_tuples'] = monthly_volume_df['volume_trend_tuples'].apply(
+            _check_volume_trend_tuples)
 
         monthly_volume_df['month_name'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[3])
         monthly_volume_df['month_enum'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[2])
@@ -375,34 +381,50 @@ class KeywordPlanService(ClientWrapper):
 
         return _df
 
+    def _get_historical_metrics_df(self,
+                                   keywords: List[str],
+                                   location_codes: List[str] = None,
+                                   language_id: str = None) -> Tuple[pd.DataFrame, Any]:
+        keyword_plan, stripped_keyword_dict = self.add_keyword_plan(keywords=keywords,
+                                                                    match_type="EXACT",
+                                                                    location_codes=location_codes,
+                                                                    language_id=language_id)
+        metrics = self.generate_historical_metrics(keyword_plan_resource_name=keyword_plan,
+                                                   stripped_keyword_dict=stripped_keyword_dict)
+        # self.remove_keyword_plan(keyword_plan_resource_name=keyword_plan)
+        _df = pd.DataFrame(metrics)
+        _df["volume_trend_coef"] = _df["volume_trend"].apply(_three_month_trend_coef)
+        _df["volume"] = _df["volume_trend"].apply(_latest_volume)
+        _df["volume_last_month"] = _df["volume_trend"].apply(_previous_volume)
+        _df["volume_last_year"] = _df["volume_trend"].apply(_last_year_volume)
+        _df["volume_3monthavg"] = _df["volume_trend"].apply(_volume_3monthavg)
+        _df["volume_6monthavg"] = _df["volume_trend"].apply(_volume_6monthavg)
+        _df["volume_12monthavg"] = _df["volume_trend"].apply(_volume_12monthavg)
+        return _df, keyword_plan
+
     def get_historical_metrics_df(self,
                                   keywords: List[str],
                                   location_codes: List[str] = None,
-                                  language_id: str = None) -> Tuple[pd.DataFrame, Any]:
+                                  language_id: str = None,
+                                  max_retries: int = 5) -> Tuple[pd.DataFrame, Any]:
 
-        try:
-            keyword_plan, stripped_keyword_dict = self.add_keyword_plan(keywords=keywords,
-                                                                        match_type="EXACT",
-                                                                        location_codes=location_codes,
-                                                                        language_id=language_id)
-            metrics = self.generate_historical_metrics(keyword_plan_resource_name=keyword_plan,
-                                                       stripped_keyword_dict=stripped_keyword_dict)
-            # self.remove_keyword_plan(keyword_plan_resource_name=keyword_plan)
-            _df = pd.DataFrame(metrics)
-            _df["volume_trend_coef"] = _df["volume_trend"].apply(_three_month_trend_coef)
-            _df["volume"] = _df["volume_trend"].apply(_latest_volume)
-            _df["volume_last_month"] = _df["volume_trend"].apply(_previous_volume)
-            _df["volume_last_year"] = _df["volume_trend"].apply(_last_year_volume)
-            _df["volume_3monthavg"] = _df["volume_trend"].apply(_volume_3monthavg)
-            _df["volume_6monthavg"] = _df["volume_trend"].apply(_volume_6monthavg)
-            _df["volume_12monthavg"] = _df["volume_trend"].apply(_volume_12monthavg)
-        except InternalServerError:
-            print("Keyword planner :: InternalServerError :: retrying after 2 seconds")
-            time.sleep(2)
-            _df, keyword_plan = self.get_historical_metrics_df(keywords=keywords,
-                                                               location_codes=location_codes,
-                                                               language_id=language_id
-                                                               )
+        retries: int = 0
+        complete: bool = False
+        while retries < max_retries and complete is False:
+            try:
+                _df, keyword_plan = self._get_historical_metrics_df(
+                    keywords=keywords,
+                    location_codes=location_codes,
+                    language_id=language_id
+                )
+                complete = True
+            except InternalServerError:
+                logging.warning("Keyword planner :: InternalServerError :: retrying after 2 seconds")
+                time.sleep(2)
+                retries += 1
+
+        if complete is False:
+            return None, None
 
         return _df, keyword_plan
 
@@ -934,10 +956,10 @@ def strip_illegal_chars(s, language_id):
     # replace `‘’ with simple '
     s = re.sub(r"[`‘’]+", "'", s)
     # first remove any non-ascii characters, replace with a space
-    if language_id in ['1001']: # when german language_id don't replace one of [Ä, ä, Ö, ö, Ü, ü, ß]
-      s = re.sub(r"[^\x00-\x7F\xC4\xE4\xD6\xF6\xDC\xFC\xDF]+", " ", s)
+    if language_id in ['1001']:  # when german language_id don't replace one of [Ä, ä, Ö, ö, Ü, ü, ß]
+        s = re.sub(r"[^\x00-\x7F\xC4\xE4\xD6\xF6\xDC\xFC\xDF]+", " ", s)
     else:
-      s = re.sub(r"[^\x00-\x7F]+", " ", s)
+        s = re.sub(r"[^\x00-\x7F]+", " ", s)
     # then replace any punctuation with a space
     s = re.sub(r"""[!¡⁄@%^()={}:;,.+\-–—_±~“"#<>?/|*¶•ªº&\[\]\\]+""", " ", s)
     # finally, replace multiple spaces (r"\s+") with a single space
