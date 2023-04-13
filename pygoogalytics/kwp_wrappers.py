@@ -302,7 +302,8 @@ class KeywordPlanService(ClientWrapper):
                             keywords: Union[List[str], str],
                             location_codes: List[str] = None,
                             language_id: str = None,
-                            print_progress: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                            print_progress: bool = False,
+                            calculated_fields: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
         if isinstance(keywords, str):
             keywords = [keywords]
@@ -313,9 +314,12 @@ class KeywordPlanService(ClientWrapper):
 
         for _keyword_sublist in keyword_list_partition:
             try:
-                historical_metrics_df, _kwp = self.get_historical_metrics_df(keywords=_keyword_sublist,
-                                                                             location_codes=location_codes,
-                                                                             language_id=language_id)
+                historical_metrics_df, _kwp = self.get_historical_metrics_df(
+                    keywords=_keyword_sublist,
+                    location_codes=location_codes,
+                    language_id=language_id,
+                    calculated_fields=calculated_fields
+                )
 
                 if historical_metrics_df is not None:
                     keyword_plans.append(_kwp)
@@ -384,7 +388,8 @@ class KeywordPlanService(ClientWrapper):
     def _get_historical_metrics_df(self,
                                    keywords: List[str],
                                    location_codes: List[str] = None,
-                                   language_id: str = None) -> Tuple[pd.DataFrame, Any]:
+                                   language_id: str = None,
+                                   calculated_fields: bool = True) -> Tuple[pd.DataFrame, Any]:
         keyword_plan, stripped_keyword_dict = self.add_keyword_plan(keywords=keywords,
                                                                     match_type="EXACT",
                                                                     location_codes=location_codes,
@@ -393,19 +398,21 @@ class KeywordPlanService(ClientWrapper):
                                                    stripped_keyword_dict=stripped_keyword_dict)
         # self.remove_keyword_plan(keyword_plan_resource_name=keyword_plan)
         _df = pd.DataFrame(metrics)
-        _df["volume_trend_coef"] = _df["volume_trend"].apply(_three_month_trend_coef)
-        _df["volume"] = _df["volume_trend"].apply(_latest_volume)
-        _df["volume_last_month"] = _df["volume_trend"].apply(_previous_volume)
-        _df["volume_last_year"] = _df["volume_trend"].apply(_last_year_volume)
-        _df["volume_3monthavg"] = _df["volume_trend"].apply(_volume_3monthavg)
-        _df["volume_6monthavg"] = _df["volume_trend"].apply(_volume_6monthavg)
-        _df["volume_12monthavg"] = _df["volume_trend"].apply(_volume_12monthavg)
+        if calculated_fields:
+            _df["volume_trend_coef"] = _df["volume_trend"].apply(_three_month_trend_coef)
+            _df["volume"] = _df["volume_trend"].apply(_latest_volume)
+            _df["volume_last_month"] = _df["volume_trend"].apply(_previous_volume)
+            _df["volume_last_year"] = _df["volume_trend"].apply(_last_year_volume)
+            _df["volume_3monthavg"] = _df["volume_trend"].apply(_volume_3monthavg)
+            _df["volume_6monthavg"] = _df["volume_trend"].apply(_volume_6monthavg)
+            _df["volume_12monthavg"] = _df["volume_trend"].apply(_volume_12monthavg)
         return _df, keyword_plan
 
     def get_historical_metrics_df(self,
                                   keywords: List[str],
                                   location_codes: List[str] = None,
                                   language_id: str = None,
+                                  calculated_fields: bool = True,
                                   max_retries: int = 5) -> Tuple[pd.DataFrame, Any]:
 
         retries: int = 0
@@ -415,7 +422,8 @@ class KeywordPlanService(ClientWrapper):
                 _df, keyword_plan = self._get_historical_metrics_df(
                     keywords=keywords,
                     location_codes=location_codes,
-                    language_id=language_id
+                    language_id=language_id,
+                    calculated_fields=calculated_fields
                 )
                 complete = True
             except InternalServerError:

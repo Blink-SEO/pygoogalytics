@@ -249,7 +249,7 @@ class GoogalyticsWrapper:
                          ga_filters: Optional[dict] = None,
                          raise_http_error: bool = False,
                          filter_google_organic: bool = False,
-                         _print_log: bool = False) -> dict:
+                         _print_log: bool = False) -> Optional[dict]:
 
         r = self._ga3_response_raw(
             start_date=start_date,
@@ -261,6 +261,9 @@ class GoogalyticsWrapper:
             raise_http_error=raise_http_error,
             page_token=None
         )
+        if r is None:
+            return None
+
         data = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
         column_header = r.get('reports', [{}])[0].get('columnHeader')
         next_page_token = r.get('reports', [{}])[0].get('nextPageToken')
