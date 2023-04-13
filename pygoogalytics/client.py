@@ -118,21 +118,27 @@ class KwpClient:
             return False
 
     def plan_service(self,
-                     customer_id: str,
+                     customer_id: str = None,
                      location_codes: List[str] = None,
                      language_id: str = None
                      ):
+        if customer_id is None:
+            customer_id = self.default_customer_id
+
         return KeywordPlanService(googleads_client=self.googleads_client,
                                   customer_id=customer_id,
                                   location_codes=location_codes,
                                   language_id=language_id)
 
     def ideas_service(self,
-                      customer_id: str,
+                      customer_id: str = None,
                       site_url: str = None,
                       location_codes: List[str] = None,
                       language_id: str = None
                       ):
+        if customer_id is None:
+            customer_id = self.default_customer_id
+
         return KeywordPlanIdeaService(googleads_client=self.googleads_client,
                                       customer_id=customer_id,
                                       site_url=site_url,

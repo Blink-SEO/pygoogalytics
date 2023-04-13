@@ -134,7 +134,7 @@ class GoogalyticsWrapper:
             _api_status = "No view id"
         try:
             _ = self.get_ga3_response(start_date=datetime.date.today() + datetime.timedelta(days=-7),
-                                      raise_http_error=True)
+                                      raise_http_error=True, log_error=False)
             _api_status = "Success"
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api successful")
         except GoogleApiHttpError as http_e:
@@ -248,6 +248,7 @@ class GoogalyticsWrapper:
                          ga_metrics: Optional[Union[List[str], str]] = None,
                          ga_filters: Optional[dict] = None,
                          raise_http_error: bool = False,
+                         log_error: bool = True,
                          filter_google_organic: bool = False,
                          _print_log: bool = False) -> Optional[dict]:
 
@@ -259,6 +260,7 @@ class GoogalyticsWrapper:
             ga_filters=ga_filters,
             filter_google_organic=filter_google_organic,
             raise_http_error=raise_http_error,
+            log_error=log_error,
             page_token=None
         )
         if r is None:
@@ -302,6 +304,7 @@ class GoogalyticsWrapper:
                           ga_filters: Optional[dict] = None,
                           filter_google_organic: bool = False,
                           raise_http_error: bool = False,
+                          log_error: bool = True,
                           return_raw_response: bool = False,
                           page_token: str = None,
                           _print_log: bool = False):
@@ -389,11 +392,14 @@ class GoogalyticsWrapper:
                 pga_logger.info(f"{self.__class__.__name__}.get_ga3_response() :: returning raw response")
                 return ga3_response
         except GoogleApiHttpError as http_error:
+            _msg = ''
             if re.match(".*user does not have sufficient permissions", repr(http_error).lower()):
-                pga_logger.error(
-                    f"{self.__class__.__name__}.get_ga3_response() :: user does not have sufficient permissions")
+                _msg = f"{self.__class__.__name__}.get_ga3_response() :: user does not have sufficient permissions"
             if re.match(".*viewid must be set", repr(http_error).lower()):
-                pga_logger.error(f"{self.__class__.__name__}.get_ga3_response() :: view id is not set")
+                _msg = f"{self.__class__.__name__}.get_ga3_response() :: view id is not set"
+
+            if log_error and _msg:
+                pga_logger.error(_msg)
 
             if raise_http_error:
                 raise http_error
