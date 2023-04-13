@@ -20,7 +20,7 @@ g_wrapper = googalytics_client.wrapper(
 ```
 """
 
-__version__ = "0.2.6"
+__version__ = "0.2.8"
 __author__ = 'Joshua Prettyman'
 __credits__ = 'Blink SEO'
 
