@@ -344,6 +344,7 @@ class KeywordPlanService(ClientWrapper):
                                                'keyword',
                                                'status',
                                                'volume_trend_tuples']].explode('volume_trend_tuples')
+
         monthly_volume_df['volume_trend_tuples'] = monthly_volume_df['volume_trend_tuples'].apply(
             _check_volume_trend_tuples)
 
@@ -352,13 +353,20 @@ class KeywordPlanService(ClientWrapper):
         monthly_volume_df['month'] = monthly_volume_df['month_enum'].apply(_get_month_from_enum_value)
         monthly_volume_df['year'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[1])
 
-        monthly_volume_df['volume'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[0])
-
-        monthly_volume_df.drop(columns=['month_enum', 'volume_trend_tuples'], inplace=True)
         monthly_volume_df.dropna(axis='index', subset=['month'], inplace=True)
 
+        monthly_volume_df['record_date'] = monthly_volume_df.apply(
+            lambda df: _conv_date(df['year'], df['month'], 15)
+        )
+        monthly_volume_df['volume'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[0])
+
+        monthly_volume_df.drop(
+            columns=['month_enum', 'volume_trend_tuples', 'month', 'year' 'month_name'],
+            inplace=True
+        )
+
         metrics_df.drop_duplicates(subset=["query", "keyword"], keep="first", inplace=True)
-        monthly_volume_df.drop_duplicates(subset=["query", "keyword", "year", "month"], keep="first", inplace=True)
+        monthly_volume_df.drop_duplicates(subset=["query", "keyword", "record_date"], keep="first", inplace=True)
 
         metrics_df.reset_index(drop=True, inplace=True)
         monthly_volume_df.reset_index(drop=True, inplace=True)
@@ -774,14 +782,17 @@ class KeywordPlanIdeaService(ClientWrapper):
         request.keyword_plan_network = self.keyword_plan_network
         # request.page_size = page_size
 
-        if RE_URL.match(url):
-            page_url = url
-        elif url == "/" or url == "":
-            page_url = self.site_url
-        elif url[0] == "/":
-            page_url = self.site_url + url[1:]
+        if url is not None:
+            if RE_URL.match(url):
+                page_url = url
+            elif url == "/" or url == "":
+                page_url = self.site_url
+            elif url[0] == "/":
+                page_url = self.site_url + url[1:]
+            else:
+                page_url = self.site_url + url
         else:
-            page_url = self.site_url + url
+            page_url = None
 
         # To generate keyword ideas with only a page_url and no keywords we need
         # to initialize a UrlSeed object with the page_url as the "url" field.
@@ -905,6 +916,18 @@ def _volume_12monthavg(volume_trends):
 
 def _partition_list(_list, n):
     return [_list[n * i:n * i + n] for i in range(ceil(len(_list) / n))]
+
+
+def _conv_date(year, month, day):
+    if isinstance(year, float):
+        year = int(year)
+    if not isinstance(year, int):
+        return None
+    if isinstance(month, float):
+        month = int(month)
+    if not isinstance(month, int):
+        return None
+    return datetime.date(year, month, day)
 
 
 def _map_location_to_resource_names(client,
