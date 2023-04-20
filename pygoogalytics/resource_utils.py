@@ -27,7 +27,7 @@ def get_analytics_resources(json_api_key: str = None, key_file_path: str = None)
         with open(path, 'rb') as _file:
             json_api_key = _file.read().decode('utf8')
     if json_api_key:
-        project_credentials = get_analytics_project_credentials(secrets=json.loads(json_string))
+        project_credentials = get_analytics_project_credentials(secrets=json.loads(json_api_key))
     else:
         project_credentials = None
     return build_analytics_resources(analytics_project_credentials=project_credentials)
