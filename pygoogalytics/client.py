@@ -1,6 +1,6 @@
 from typing import List
 
-from .resource_utils import resources_from_json, resources_from_key_file, \
+from .resource_utils import get_analytics_resources, \
     googleads_client_from_yaml, googleads_client_from_key_file
 from .googalytics_wrapper import GoogalyticsWrapper
 from .kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
@@ -18,32 +18,21 @@ class GoogalyticsClient:
     """
 
     def __init__(self,
-                 key_file_path: str = None,
-                 key_file_json: str = None
+                 gsc_resource=None,
+                 ga3_resource=None,
+                 ga4_resource=None
                  ):
 
-        self.gsc_resource = None
-        self.ga3_resource = None
-        self.ga4_resource = None
+        self.gsc_resource = gsc_resource
+        self.ga3_resource = ga3_resource
+        self.ga4_resource = ga4_resource
 
-        if key_file_json:
-            self._build_from_json(json_string=key_file_json)
-            pga_logger.info(f"initialised PyGoogalytics Client object from key file")
-        elif key_file_path:
-            self._build_from_key_file(path=key_file_path)
-            pga_logger.info(f"initialised PyGoogalytics Client object from JSON string")
-
-    def _build_from_json(self, json_string: str):
-        _ga3_resource, _ga4_resource, _gsc_resource = resources_from_json(json_string=json_string)
-        self.gsc_resource = _gsc_resource
-        self.ga3_resource = _ga3_resource
-        self.ga4_resource = _ga4_resource
-
-    def _build_from_key_file(self, path: str):
-        _ga3_resource, _ga4_resource, _gsc_resource = resources_from_key_file(path=path)
-        self.gsc_resource = _gsc_resource
-        self.ga3_resource = _ga3_resource
-        self.ga4_resource = _ga4_resource
+    @classmethod
+    def build(cls, api_key: str = None, key_file_path: str = None):
+        _ga3_resource, _ga4_resource, _gsc_resource = get_analytics_resources(
+            json_api_key=api_key, key_file_path=key_file_path
+        )
+        return cls(gsc_resource=_gsc_resource, ga3_resource=_ga3_resource,  ga4_resource=_ga4_resource)
 
     def wrapper(self,
                 sc_domain: str = None,
@@ -144,4 +133,3 @@ class KwpClient:
                                       site_url=site_url,
                                       location_codes=location_codes,
                                       language_id=language_id)
-

@@ -22,16 +22,15 @@ def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsCli
     return googleads_client, default_customer_id
 
 
-def resources_from_key_file(path: str):
-    with open(path, 'rb') as _file:
-        _json_string = _file.read().decode('utf8')
-    return resources_from_json(json_string=_json_string)
-
-
-def resources_from_json(json_string: str):
-    _secrets = json.loads(json_string)
-    _project_credentials = get_analytics_project_credentials(secrets=_secrets)
-    return get_analytics_resources(analytics_project_credentials=_project_credentials)
+def get_analytics_resources(json_api_key: str = None, key_file_path: str = None):
+    if key_file_path and not json_api_key:
+        with open(path, 'rb') as _file:
+            json_api_key = _file.read().decode('utf8')
+    if json_api_key:
+        project_credentials = get_analytics_project_credentials(secrets=json.loads(json_string))
+    else:
+        project_credentials = None
+    return build_analytics_resources(analytics_project_credentials=project_credentials)
 
 
 def get_analytics_project_credentials(secrets: dict):
@@ -45,7 +44,7 @@ def get_analytics_project_credentials(secrets: dict):
     return project_credentials
 
 
-def get_analytics_resources(analytics_project_credentials):
+def build_analytics_resources(analytics_project_credentials: service_account.Credentials = None):
     ga3_resource = discovery.build('analyticsreporting', 'v4', credentials=analytics_project_credentials)
     gsc_resource = discovery.build('searchconsole', 'v1', credentials=analytics_project_credentials)
     ga4_data_client = BetaAnalyticsDataClient(credentials=analytics_project_credentials)
