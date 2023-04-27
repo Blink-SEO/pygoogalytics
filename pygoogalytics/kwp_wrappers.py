@@ -356,7 +356,8 @@ class KeywordPlanService(ClientWrapper):
         monthly_volume_df.dropna(axis='index', subset=['month'], inplace=True)
 
         monthly_volume_df['record_date'] = monthly_volume_df.apply(
-            lambda df: _conv_date(df['year'], df['month'], 15)
+            lambda df: _conv_date(df['year'], df['month'], 15),
+            axis=1
         )
         monthly_volume_df['volume'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[0])
 
