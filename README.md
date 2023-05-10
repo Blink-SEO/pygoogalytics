@@ -1,9 +1,22 @@
+<div id="badges">
+   <img src="https://img.shields.io/badge/3.10+-yellow?label=python&style=plastic&logo=python&logoColor=yellow" alt="Python version: 3.10 | 3.11">
+   <img src="https://img.shields.io/badge/UA (GA3) | GA4 | GSC | GoogleAds-green?label=API support&style=plastic&logo=googlecloud&logoColor=green" alt="Application support: GA3 | GSC | GoogleAds | SemRush | ScreamingFrog">
+   <img src="https://img.shields.io/badge/beta-red?label=stage&style=plastic&logoColor=blue" alt="Stage: beta">
+</div>
+
 ### Installation
 
 PyGoogalytics can be installed using [pip](https://pypi.org/project/pygoogalytics/):
 ```shell
 pip install -U pygoogalytics
 ```
+
+### Set-up
+
+Although PyGoogalytics is intended to be user-friendly it is still 
+necessary to set up various accounts and credentials with Google. 
+If you haven't yet setup API access for Universal Analytics, GA4, Search Console or Google Ads, follow [our instructions](setup_instruction.md) to get started.
+
 
 # Google Analytics API wrapper
 
