@@ -637,7 +637,7 @@ class KeywordPlanService(ClientWrapper):
         keyword_plan_campaign.keyword_plan = keyword_plan
         keyword_plan_campaign.keyword_plan_network = network
 
-        # Other geo target constants can be referenced here:
+        # Other geotarget constants can be referenced here:
         # https://developers.google.com/google-ads/api/reference/data/geotargets
         for _loc in location_resources:
             geo_target = self.client.get_type("KeywordPlanGeoTarget", version="v12")

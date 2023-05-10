@@ -1,5 +1,7 @@
 from typing import List
 
+from google.ads.googleads.client import GoogleAdsClient
+
 from .resource_utils import get_analytics_resources, \
     googleads_client_from_yaml, googleads_client_from_key_file
 from .googalytics_wrapper import GoogalyticsWrapper
@@ -77,28 +79,23 @@ class GoogalyticsClient:
 
 class KwpClient:
     def __init__(self,
-                 key_file_yaml: str = None,
-                 key_file_path: str = None
-                 ):
-        self.googleads_client = None
-        self.default_customer_id = None
+                 googleads_client: GoogleAdsClient,
+                 default_customer_id: str):
+        self.googleads_client = googleads_client
+        self.default_customer_id = default_customer_id
 
-        if key_file_yaml:
-            self._build_from_yaml(yaml_string=key_file_yaml)
+    @classmethod
+    def build(cls, yaml_key: str = None, key_file_path: str = None):
+        if yaml_key:
+            googleads_client, default_customer_id = googleads_client_from_yaml(googleads_yaml_string=yaml_key)
+            pga_logger.info(f"initialised KwpClient object from yaml string")
         elif key_file_path:
-            self._build_from_key_file(path=key_file_path)
+            googleads_client, default_customer_id = googleads_client_from_key_file(path=key_file_path)
+            pga_logger.info(f"initialised KwpClient object from key file")
+        else:
+            raise KeyError("either yaml_key or key_file_path must be supplied")
 
-    def _build_from_yaml(self, yaml_string: str):
-        _googleads_client, _default_customer_id = googleads_client_from_yaml(googleads_yaml_string=yaml_string)
-        self.googleads_client = _googleads_client
-        self.default_customer_id = _default_customer_id
-        pga_logger.info(f"initialised KwpClient object from yaml string")
-
-    def _build_from_key_file(self, path: str):
-        _googleads_client, _default_customer_id = googleads_client_from_key_file(path=path)
-        self.googleads_client = _googleads_client
-        self.default_customer_id = _default_customer_id
-        pga_logger.info(f"initialised KwpClient object from key file")
+        return cls(googleads_client=googleads_client, default_customer_id=default_customer_id)
 
     def __bool__(self):
         if self.googleads_client is not None:
