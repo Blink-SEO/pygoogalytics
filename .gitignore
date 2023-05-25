@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 .idea/
 
-test.ipynb
+*.ipynb
 
 # OS generated files
 .DS_Store
