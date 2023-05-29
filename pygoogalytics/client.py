@@ -6,6 +6,7 @@ from .resource_utils import get_analytics_resources, \
     googleads_client_from_yaml, googleads_client_from_key_file
 from .googalytics_wrapper import GoogalyticsWrapper
 from .kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
+from .ads_wrapper import AdsWrapper
 from . import pga_logger
 
 
@@ -77,7 +78,7 @@ class GoogalyticsClient:
         return _s
 
 
-class KwpClient:
+class AdsClient:
     def __init__(self,
                  googleads_client: GoogleAdsClient,
                  default_customer_id: str):
@@ -130,3 +131,9 @@ class KwpClient:
                                       site_url=site_url,
                                       location_codes=location_codes,
                                       language_id=language_id)
+
+    def report_service(self, customer_id: str):
+        return AdsWrapper(customer_id=customer_id)
+
+def print_hi():
+    print("Hello, world!")
