@@ -17,9 +17,15 @@ def googleads_client_from_key_file(path: str):
 
 def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str]:
     googleads_yaml_dict = yaml.safe_load(googleads_yaml_string)
-    default_customer_id = str(googleads_yaml_dict.get('default_customer_id'))
+    default_customer_id = parse_ads_id(googleads_yaml_dict.get('default_customer_id'))
     googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version="v12")
     return googleads_client, default_customer_id
+
+
+def parse_ads_id(customer_id: str | int) -> str:
+    if isinstance(customer_id, int):
+        customer_id = str(customer_id)
+    return re.sub(r'[^\d]', '', customer_id)
 
 
 def get_analytics_resources(json_api_key: str = None, key_file_path: str = None):

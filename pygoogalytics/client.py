@@ -3,7 +3,7 @@ from typing import List
 from google.ads.googleads.client import GoogleAdsClient
 
 from .resource_utils import get_analytics_resources, \
-    googleads_client_from_yaml, googleads_client_from_key_file
+    googleads_client_from_yaml, googleads_client_from_key_file, parse_ads_id
 from .googalytics_wrapper import GoogalyticsWrapper
 from .kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
 from .ads_wrapper import AdsWrapper
@@ -113,7 +113,7 @@ class AdsClient:
             customer_id = self.default_customer_id
 
         return KeywordPlanService(googleads_client=self.googleads_client,
-                                  customer_id=customer_id,
+                                  customer_id=parse_ads_id(customer_id),
                                   location_codes=location_codes,
                                   language_id=language_id)
 
@@ -127,13 +127,13 @@ class AdsClient:
             customer_id = self.default_customer_id
 
         return KeywordPlanIdeaService(googleads_client=self.googleads_client,
-                                      customer_id=customer_id,
+                                      customer_id=parse_ads_id(customer_id),
                                       site_url=site_url,
                                       location_codes=location_codes,
                                       language_id=language_id)
 
     def report_service(self, customer_id: str):
-        return AdsWrapper(customer_id=customer_id)
-
-def print_hi():
-    print("Hello, world!")
+        if customer_id is None:
+            customer_id = self.default_customer_id
+        return AdsWrapper(googleads_client=self.googleads_client,
+                          customer_id=parse_ads_id(customer_id))
