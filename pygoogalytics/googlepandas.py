@@ -8,7 +8,7 @@ import datetime
 
 from typing import List, Optional, Union, Pattern
 
-from . import utils
+from .utils import utils
 
 gpd_logger = logging.getLogger("googlepandas")
 

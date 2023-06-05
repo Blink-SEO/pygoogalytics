@@ -9,7 +9,7 @@ from googleapiclient.errors import HttpError as GoogleApiHttpError
 import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
-from . import utils
+from .utils import utils
 from . import pga_logger
 
 
