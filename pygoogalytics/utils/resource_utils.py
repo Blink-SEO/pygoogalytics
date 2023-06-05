@@ -31,7 +31,7 @@ def parse_ads_id(customer_id: str | int) -> str:
 
 def get_analytics_resources(json_api_key: str = None, key_file_path: str = None):
     if key_file_path and not json_api_key:
-        with open(path, 'rb') as _file:
+        with open(key_file_path, 'rb') as _file:
             json_api_key = _file.read().decode('utf8')
     if json_api_key:
         project_credentials = get_analytics_project_credentials(secrets=json.loads(json_api_key))
