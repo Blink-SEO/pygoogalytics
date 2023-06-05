@@ -2,7 +2,7 @@ from typing import List
 
 from google.ads.googleads.client import GoogleAdsClient
 
-from .resource_utils import get_analytics_resources, \
+from pygoogalytics.utils.resource_utils import get_analytics_resources, \
     googleads_client_from_yaml, googleads_client_from_key_file, parse_ads_id
 from .googalytics_wrapper import GoogalyticsWrapper
 from .kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
