@@ -68,3 +68,12 @@ def test_time(t: datetime.datetime, seconds: float) -> Optional[bool]:
         return True
     else:
         return False
+
+
+def dict_merge(dict1, dict2):
+    d = dict()
+    for k, v in dict1.items():
+        d[k] = v
+    for k, v in dict2.items():
+        d[k] = v
+    return d

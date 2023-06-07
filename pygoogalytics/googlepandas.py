@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import datetime
 
+from google.analytics.data_v1beta.types.analytics_data_api import RunReportResponse
+
 from typing import List, Optional, Union, Pattern
 
 from .utils import utils
@@ -58,7 +60,7 @@ GA_Types = {
 }
 
 
-def from_response(response: dict,
+def from_response(response: dict | RunReportResponse,
                   response_type: str = None,
                   report_index: int = 0,
                   gsc_dimensions: Optional[List[str]] = None,
@@ -81,6 +83,12 @@ def from_response(response: dict,
         gpd_logger.debug(f"from_response: creating GADataFrame. dimensions = [{dimensions}], metrics = [{metrics}]")
         return GADataFrame(df_input=rows,
                            dimensions=dimensions, metrics=metrics,
+                           start_date=start_date, end_date=end_date,
+                           from_ga_response=True)
+    elif response_type == 'GA4':
+        rows, metadata = parse_ga4_response(response)
+        return GADataFrame(df_input=rows,
+                           dimensions=metadata.get('dimensions'), metrics=metadata.get('metrics'),
                            start_date=start_date, end_date=end_date,
                            from_ga_response=True)
     elif response_type == 'GSC':
@@ -126,7 +134,8 @@ class GADataFrame(pd.DataFrame):
                  "metrics",
                  "join_dimensions",
                  "date_range",
-                 "date_range_days"]
+                 "date_range_days",
+                 "time_obtained"]
 
     def __init__(self, df_input,
                  dimensions: Optional[List[str]] = None,
@@ -134,8 +143,14 @@ class GADataFrame(pd.DataFrame):
                  from_ga_response: bool = False,
                  join_dimensions: List[str] = None,
                  start_date: datetime.date = None,
-                 end_date: datetime.date = None
+                 end_date: datetime.date = None,
+                 time_obtained: datetime.datetime = None
                  ):
+
+        if time_obtained:
+            self.time_obtained = time_obtained.astimezone(tz=datetime.tzinfo())
+        else:
+            self.time_obtained = datetime.datetime.now(tz=datetime.timezone.utc)
 
         self.dimensions = dimensions
         self.metrics = metrics
@@ -170,6 +185,13 @@ class GADataFrame(pd.DataFrame):
                 join_dimensions = remove_list_item(join_dimensions, 'sourceMedium')
                 join_dimensions.extend(['source', 'medium'])
 
+            if 'sessionSourceMedium' in self.columns:
+                self['sessionSource'] = None
+                self['sessionMedium'] = None
+                self.drop(columns='sessionSourceMedium', inplace=True)
+                join_dimensions = remove_list_item(join_dimensions, 'sessionSourceMedium')
+                join_dimensions.extend(['sessionSource', 'sessionMedium'])
+
             if 'transactionsPerSession' in self.columns:
                 self.rename(columns={'transactionsPerSession': 'conversionRate'}, inplace=True)
 
@@ -183,6 +205,13 @@ class GADataFrame(pd.DataFrame):
                 self['recordTime'] = None
                 self.drop(columns='dateHourMinute', inplace=True)
                 join_dimensions = remove_list_item(join_dimensions, 'dateHourMinute')
+                join_dimensions.extend(['recordDate', 'recordTime'])
+
+            if 'dateHour' in self.columns:
+                self['recordDate'] = None
+                self['recordTime'] = None
+                self.drop(columns='dateHour', inplace=True)
+                join_dimensions = remove_list_item(join_dimensions, 'dateHour')
                 join_dimensions.extend(['recordDate', 'recordTime'])
 
             self.join_dimensions = [camel_to_snake(_) for _ in join_dimensions]
@@ -238,6 +267,13 @@ class GADataFrame(pd.DataFrame):
                 join_dimensions = remove_list_item(join_dimensions, 'sourceMedium')
                 join_dimensions.extend(['source', 'medium'])
 
+            if 'sessionSourceMedium' in self.columns:
+                self['sessionSource'] = self.sourceMedium.apply(lambda s: s.split('/')[0].strip())
+                self['sessionMedium'] = self.sourceMedium.apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
+                self.drop(columns='sessionSourceMedium', inplace=True)
+                join_dimensions = remove_list_item(join_dimensions, 'sessionSourceMedium')
+                join_dimensions.extend(['sessionSource', 'sessionMedium'])
+
             if 'date' in self.columns:
                 self.drop(
                     self[self.date.apply(lambda _date: True if _date == '(other)' else False)].index,
@@ -259,6 +295,18 @@ class GADataFrame(pd.DataFrame):
                 self['recordTime'] = date_time_series.apply(lambda date_time: date_time.time())
                 self.drop(columns='dateHourMinute', inplace=True)
                 join_dimensions = remove_list_item(join_dimensions, 'dateHourMinute')
+                join_dimensions.extend(['recordDate', 'recordTime'])
+
+            if 'dateHour' in self.columns:
+                self.drop(
+                    self[self.dateHourMinute.apply(lambda _datetime: True if _datetime == '(other)' else False)].index,
+                    inplace=True
+                )
+                date_time_series = pd.to_datetime(self.dateHourMinute, format="%Y%m%d%H")
+                self['recordDate'] = date_time_series.apply(lambda date_time: datetime.datetime.date(date_time))
+                self['recordTime'] = date_time_series.apply(lambda date_time: date_time.time())
+                self.drop(columns='dateHour', inplace=True)
+                join_dimensions = remove_list_item(join_dimensions, 'dateHour')
                 join_dimensions.extend(['recordDate', 'recordTime'])
 
             if 'countryIsoCode' in self.columns:
@@ -705,11 +753,14 @@ def strip_ga_prefix(s: str) -> str:
 
 
 def get_response_type(response: dict):
-    # Check for GA response
+    if isinstance(response, RunReportResponse):
+        return 'GA4'
+
+    # Check for GA3 response
     try:
         rows = response.get('reports', [])[0]['data']['rows']
         dimensions = response.get('reports')[0].get('columnHeader')['dimensions']
-        return 'GA'
+        return 'GA3'
     except (TypeError, IndexError, KeyError, AttributeError):
         pass
 
@@ -767,3 +818,28 @@ def get_sub2(page_path: str):
 
 def remove_list_item(_list, _item) -> list:
     return [_ for _ in _list if _ != _item]
+
+
+def parse_ga4_response(response: RunReportResponse):
+    dimension_headers = [_.name for _ in response.dimension_headers]
+    metric_headers = [_.name for _ in response.metric_headers]
+    if response.row_count > 0:
+        rows = [
+            (
+                {dim_k: dim_v for dim_k, dim_v in zip(dimension_headers, [_dv.value for _dv in _r.dimension_values])},
+                {met_k: float(met_v) for met_k, met_v in zip(metric_headers, [_dv.value for _dv in _r.metric_values])}
+            ) for _r in response.rows
+        ]
+        rows = [dict_merge(t[0], t[1]) for t in rows]
+    else:
+        rows = []
+
+    metadata = {
+        'dimension_headers': dimension_headers,
+        'metric_headers': metric_headers,
+        'row_count': r.row_count,
+        'currency_code': r.metadata.currency_code,
+        'time_zone': r.metadata.time_zone
+    }
+
+    return rows, metadata
