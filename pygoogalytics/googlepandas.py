@@ -11,6 +11,7 @@ from google.analytics.data_v1beta.types.analytics_data_api import RunReportRespo
 from typing import List, Optional, Union, Pattern
 
 from .utils import utils
+from .utils.ga4_parser import parse_ga4_response
 
 gpd_logger = logging.getLogger("googlepandas")
 
@@ -82,13 +83,17 @@ def from_response(response: dict | RunReportResponse,
         metrics = [_d['name'] for _d in _metric_header_entries]
         gpd_logger.debug(f"from_response: creating GADataFrame. dimensions = [{dimensions}], metrics = [{metrics}]")
         return GADataFrame(df_input=rows,
+                           response_type='GA3',
                            dimensions=dimensions, metrics=metrics,
                            start_date=start_date, end_date=end_date,
                            from_ga_response=True)
     elif response_type == 'GA4':
         rows, metadata = parse_ga4_response(response)
         return GADataFrame(df_input=rows,
-                           dimensions=metadata.get('dimensions'), metrics=metadata.get('metrics'),
+                           response_type='GA4',
+                           dimensions=metadata.get('dimension_headers'),
+                           metrics=metadata.get('metric_headers'),
+                           row_count=metadata.get('row_count'),
                            start_date=start_date, end_date=end_date,
                            from_ga_response=True)
     elif response_type == 'GSC':
@@ -135,16 +140,20 @@ class GADataFrame(pd.DataFrame):
                  "join_dimensions",
                  "date_range",
                  "date_range_days",
-                 "time_obtained"]
+                 "time_obtained",
+                 "row_count",
+                 "response_type"]
 
     def __init__(self, df_input,
-                 dimensions: Optional[List[str]] = None,
-                 metrics: Optional[List[str]] = None,
+                 dimensions: list[str] = None,
+                 metrics: list[str] = None,
                  from_ga_response: bool = False,
                  join_dimensions: List[str] = None,
                  start_date: datetime.date = None,
                  end_date: datetime.date = None,
-                 time_obtained: datetime.datetime = None
+                 time_obtained: datetime.datetime = None,
+                 row_count: int = 0,
+                 response_type: str = 'GA4'
                  ):
 
         if time_obtained:
@@ -154,8 +163,16 @@ class GADataFrame(pd.DataFrame):
 
         self.dimensions = dimensions
         self.metrics = metrics
+
+        if join_dimensions is None:
+            join_dimensions = dimensions
+
         self.join_dimensions = join_dimensions
+
         self.date_range = {'start': start_date, 'end': end_date}
+        self.row_count = row_count
+        self.response_type = response_type
+
         if start_date and end_date:
             self.date_range_days = (end_date - start_date).days + 1
         else:
@@ -220,20 +237,21 @@ class GADataFrame(pd.DataFrame):
             super().__init__(df_input)
 
         if from_ga_response:
-            for _i in range(len(self.metrics) - 1, -1, -1):
-                self.insert(loc=0, column=strip_ga_prefix(self.metrics[_i]),
-                            value=self['metrics'].apply(lambda x: x[0].get('values')[_i]
-                                                        ).astype(GA_Types.get(self.metrics[_i], str))
-                            )
-            self.drop(columns='metrics', inplace=True)
+            if response_type == 'GA3':
+                for _i in range(len(self.metrics) - 1, -1, -1):
+                    self.insert(loc=0, column=strip_ga_prefix(self.metrics[_i]),
+                                value=self['metrics'].apply(lambda x: x[0].get('values')[_i]
+                                                            ).astype(GA_Types.get(self.metrics[_i], str))
+                                )
+                self.drop(columns='metrics', inplace=True)
 
-            for _i in range(len(self.dimensions) - 1, -1, -1):
-                self.insert(loc=0, column=strip_ga_prefix(self.dimensions[_i]),
-                            value=self['dimensions'].apply(lambda x: x[_i]
-                                                           ).astype(GA_Types.get(self.dimensions[_i], str))
-                            )
-            self.drop(columns='dimensions', inplace=True)
-            join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
+                for _i in range(len(self.dimensions) - 1, -1, -1):
+                    self.insert(loc=0, column=strip_ga_prefix(self.dimensions[_i]),
+                                value=self['dimensions'].apply(lambda x: x[_i]
+                                                               ).astype(GA_Types.get(self.dimensions[_i], str))
+                                )
+                self.drop(columns='dimensions', inplace=True)
+                join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
 
             if 'productName' in self.columns:
                 self['productName'] = self['productName'].apply(lambda s: s.strip().lower()
@@ -268,8 +286,8 @@ class GADataFrame(pd.DataFrame):
                 join_dimensions.extend(['source', 'medium'])
 
             if 'sessionSourceMedium' in self.columns:
-                self['sessionSource'] = self.sourceMedium.apply(lambda s: s.split('/')[0].strip())
-                self['sessionMedium'] = self.sourceMedium.apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
+                self['sessionSource'] = self['sessionSourceMedium'].apply(lambda s: s.split('/')[0].strip())
+                self['sessionMedium'] = self['sessionSourceMedium'].apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
                 self.drop(columns='sessionSourceMedium', inplace=True)
                 join_dimensions = remove_list_item(join_dimensions, 'sessionSourceMedium')
                 join_dimensions.extend(['sessionSource', 'sessionMedium'])
@@ -299,10 +317,10 @@ class GADataFrame(pd.DataFrame):
 
             if 'dateHour' in self.columns:
                 self.drop(
-                    self[self.dateHourMinute.apply(lambda _datetime: True if _datetime == '(other)' else False)].index,
+                    self[self['dateHour'].apply(lambda _datetime: True if _datetime == '(other)' else False)].index,
                     inplace=True
                 )
-                date_time_series = pd.to_datetime(self.dateHourMinute, format="%Y%m%d%H")
+                date_time_series = pd.to_datetime(self['dateHour'], format="%Y%m%d%H")
                 self['recordDate'] = date_time_series.apply(lambda date_time: datetime.datetime.date(date_time))
                 self['recordTime'] = date_time_series.apply(lambda date_time: date_time.time())
                 self.drop(columns='dateHour', inplace=True)
@@ -752,7 +770,7 @@ def strip_ga_prefix(s: str) -> str:
         return s
 
 
-def get_response_type(response: dict):
+def get_response_type(response: dict | RunReportResponse):
     if isinstance(response, RunReportResponse):
         return 'GA4'
 
@@ -819,27 +837,3 @@ def get_sub2(page_path: str):
 def remove_list_item(_list, _item) -> list:
     return [_ for _ in _list if _ != _item]
 
-
-def parse_ga4_response(response: RunReportResponse):
-    dimension_headers = [_.name for _ in response.dimension_headers]
-    metric_headers = [_.name for _ in response.metric_headers]
-    if response.row_count > 0:
-        rows = [
-            (
-                {dim_k: dim_v for dim_k, dim_v in zip(dimension_headers, [_dv.value for _dv in _r.dimension_values])},
-                {met_k: float(met_v) for met_k, met_v in zip(metric_headers, [_dv.value for _dv in _r.metric_values])}
-            ) for _r in response.rows
-        ]
-        rows = [dict_merge(t[0], t[1]) for t in rows]
-    else:
-        rows = []
-
-    metadata = {
-        'dimension_headers': dimension_headers,
-        'metric_headers': metric_headers,
-        'row_count': r.row_count,
-        'currency_code': r.metadata.currency_code,
-        'time_zone': r.metadata.time_zone
-    }
-
-    return rows, metadata
