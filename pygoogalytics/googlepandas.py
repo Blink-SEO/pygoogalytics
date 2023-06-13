@@ -88,14 +88,31 @@ def from_response(response: dict | RunReportResponse,
                            start_date=start_date, end_date=end_date,
                            from_ga_response=True)
     elif response_type == 'GA4':
-        rows, metadata = parse_ga4_response(response)
-        return GADataFrame(df_input=rows,
-                           response_type='GA4',
-                           dimensions=metadata.get('dimension_headers'),
-                           metrics=metadata.get('metric_headers'),
-                           row_count=metadata.get('row_count'),
-                           start_date=start_date, end_date=end_date,
-                           from_ga_response=True)
+        if isinstance(response, RunReportResponse):
+            rows, metadata = parse_ga4_response(response)
+            return GADataFrame(df_input=rows,
+                               response_type='GA4',
+                               dimensions=metadata.get('dimension_headers'),
+                               metrics=metadata.get('metric_headers'),
+                               row_count=metadata.get('row_count'),
+                               start_date=start_date, end_date=end_date,
+                               from_ga_response=True)
+        else:
+            rows = response.get('rows')
+            from_ga_response = True
+            if len(rows) == 0:
+                rows = None
+                from_ga_response = False
+            return GADataFrame(df_input=rows,
+                               response_type='GA4',
+                               dimensions=response.get('dimension_headers'),
+                               metrics=response.get('metric_headers'),
+                               row_count=response.get('total_row_count'),
+                               start_date=response.get('start_date'),
+                               end_date=response.get('end_date'),
+                               quota_reached=response.get('quota_reached'),
+                               from_ga_response=from_ga_response)
+
     elif response_type == 'GSC':
         rows = response.get('rows', [])
         response_aggregation = response.get('responseAggregationType', None)
@@ -142,7 +159,8 @@ class GADataFrame(pd.DataFrame):
                  "date_range_days",
                  "time_obtained",
                  "row_count",
-                 "response_type"]
+                 "response_type",
+                 "quota_reached"]
 
     def __init__(self, df_input,
                  dimensions: list[str] = None,
@@ -153,7 +171,8 @@ class GADataFrame(pd.DataFrame):
                  end_date: datetime.date = None,
                  time_obtained: datetime.datetime = None,
                  row_count: int = 0,
-                 response_type: str = 'GA4'
+                 response_type: str = 'GA4',
+                 quota_reached: bool = None
                  ):
 
         if time_obtained:
@@ -172,6 +191,7 @@ class GADataFrame(pd.DataFrame):
         self.date_range = {'start': start_date, 'end': end_date}
         self.row_count = row_count
         self.response_type = response_type
+        self.quota_reached = quota_reached
 
         if start_date and end_date:
             self.date_range_days = (end_date - start_date).days + 1
@@ -329,6 +349,11 @@ class GADataFrame(pd.DataFrame):
 
             if 'countryIsoCode' in self.columns:
                 self.countryIsoCode = self.countryIsoCode.apply(iso_code_2_to_3)
+
+            if 'countryId' in self.columns:
+                self['countryIsoCode'] = self['countryId'].apply(iso_code_2_to_3)
+                join_dimensions = remove_list_item(join_dimensions, 'countryId')
+                join_dimensions.extend(['countryIsoCode'])
 
             self.join_dimensions = [camel_to_snake(_) for _ in join_dimensions]
 
@@ -773,6 +798,9 @@ def strip_ga_prefix(s: str) -> str:
 def get_response_type(response: dict | RunReportResponse):
     if isinstance(response, RunReportResponse):
         return 'GA4'
+
+    if _t := response.get('response_type'):
+        return _t
 
     # Check for GA3 response
     try:

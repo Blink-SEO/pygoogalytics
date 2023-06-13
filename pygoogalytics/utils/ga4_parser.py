@@ -16,13 +16,27 @@ def parse_ga4_response(response: RunReportResponse):
     else:
         rows = []
 
+    _quota = response.property_quota
+    _quota_dict = {
+        'tokens_per_day': {
+            'consumed': _quota.tokens_per_day.consumed,
+            'remaining': _quota.tokens_per_day.remaining
+        },
+        'tokens_per_hour':{
+            'consumed': _quota.tokens_per_hour.consumed,
+            'remaining': _quota.tokens_per_hour.remaining
+        }
+    }
+
     metadata = {
+        'response_type': 'GA4',
         'dimension_headers': dimension_headers,
         'metric_headers': metric_headers,
         'meta_row_count': response.row_count,
         'currency_code': response.metadata.currency_code,
         'time_zone': response.metadata.time_zone,
-        'row_count': len(rows)
+        'row_count': len(rows),
+        'quota': _quota_dict
     }
 
     return rows, metadata
