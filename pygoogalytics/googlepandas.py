@@ -160,7 +160,8 @@ class GADataFrame(pd.DataFrame):
                  "time_obtained",
                  "row_count",
                  "response_type",
-                 "quota_reached"]
+                 "quota_reached",
+                 "invalid_arguments"]
 
     def __init__(self, df_input,
                  dimensions: list[str] = None,
@@ -172,7 +173,8 @@ class GADataFrame(pd.DataFrame):
                  time_obtained: datetime.datetime = None,
                  row_count: int = 0,
                  response_type: str = 'GA4',
-                 quota_reached: bool = None
+                 quota_reached: bool = None,
+                 invalid_arguments: bool = None
                  ):
 
         if time_obtained:
@@ -188,10 +190,14 @@ class GADataFrame(pd.DataFrame):
 
         self.join_dimensions = join_dimensions
 
-        self.date_range = {'start': start_date, 'end': end_date}
+        self.date_range = {
+            'start': start_date or datetime.date.today(),
+            'end': end_date or datetime.date.today()
+        }
         self.row_count = row_count
         self.response_type = response_type
         self.quota_reached = quota_reached
+        self.invalid_arguments = invalid_arguments
 
         if start_date and end_date:
             self.date_range_days = (end_date - start_date).days + 1
@@ -199,59 +205,68 @@ class GADataFrame(pd.DataFrame):
             self.date_range_days = None
 
         if df_input is None:
-            join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
+            self.join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
             super().__init__(None, columns=[strip_ga_prefix(_) for _ in dimensions + metrics])
+
+            if 'landingPagePlusQueryString' in self.columns:
+                self.rename(columns={'landingPagePlusQueryString': 'landingPagePath'}, inplace=True)
+                self.remove_join_dimensions('landingPagePlusQueryString')
+                self.add_join_dimensions('landingPagePath')
+
             if 'landingPagePath' in self.columns:
                 # rename 'landingPagePath' to 'landingPageFull', then add dummy columns for
                 # 'landingPage' and 'landingPageParameter'
                 self.rename(columns={'landingPagePath': 'landingPageFull'}, inplace=True)
                 self['landingPage'] = None
                 self['landingPageParameter'] = None
-                join_dimensions = remove_list_item(join_dimensions, 'landingPagePath')
-                join_dimensions.extend(['landingPage', 'landingPageFull', 'landingPageParameter'])
+                self.remove_join_dimensions('landingPagePath')
+                self.add_join_dimensions(['landingPage', 'landingPageFull', 'landingPageParameter'])
 
             if 'deviceCategory' in self.columns:
                 self.rename(columns={'deviceCategory': 'device'}, inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'deviceCategory')
-                join_dimensions.extend(['device'])
+                self.remove_join_dimensions('deviceCategory')
+                self.add_join_dimensions(['device'])
 
             if 'sourceMedium' in self.columns:
                 self['source'] = None
                 self['medium'] = None
                 self.drop(columns='sourceMedium', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'sourceMedium')
-                join_dimensions.extend(['source', 'medium'])
+                self.remove_join_dimensions('sourceMedium')
+                self.add_join_dimensions(['source', 'medium'])
 
             if 'sessionSourceMedium' in self.columns:
-                self['sessionSource'] = None
-                self['sessionMedium'] = None
+                self['source'] = None
+                self['medium'] = None
                 self.drop(columns='sessionSourceMedium', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'sessionSourceMedium')
-                join_dimensions.extend(['sessionSource', 'sessionMedium'])
+                self.remove_join_dimensions('sessionSourceMedium')
+                self.add_join_dimensions(['source', 'medium'])
 
             if 'transactionsPerSession' in self.columns:
                 self.rename(columns={'transactionsPerSession': 'conversionRate'}, inplace=True)
 
+            if 'itemPurchaseQuantity' in self.columns:
+                self.rename(columns={'itemPurchaseQuantity': 'itemQuantity'}, inplace=True)
+
             if 'date' in self.columns:
                 self.rename(columns={'date': 'recordDate'}, inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'date')
-                join_dimensions.extend(['recordDate'])
+                self.remove_join_dimensions('date')
+                self.add_join_dimensions(['recordDate'])
 
             if 'dateHourMinute' in self.columns:
                 self['recordDate'] = None
                 self['recordTime'] = None
                 self.drop(columns='dateHourMinute', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'dateHourMinute')
-                join_dimensions.extend(['recordDate', 'recordTime'])
+                self.remove_join_dimensions('dateHourMinute')
+                self.add_join_dimensions(['recordDate', 'recordTime'])
 
             if 'dateHour' in self.columns:
                 self['recordDate'] = None
                 self['recordTime'] = None
                 self.drop(columns='dateHour', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'dateHour')
-                join_dimensions.extend(['recordDate', 'recordTime'])
+                self.remove_join_dimensions('dateHour')
+                self.add_join_dimensions(['recordDate', 'recordTime'])
 
-            self.join_dimensions = [camel_to_snake(_) for _ in join_dimensions]
+            self.snake_case_join_dimensions()
 
         else:
             super().__init__(df_input)
@@ -271,7 +286,7 @@ class GADataFrame(pd.DataFrame):
                                                                ).astype(GA_Types.get(self.dimensions[_i], str))
                                 )
                 self.drop(columns='dimensions', inplace=True)
-                join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
+                self.join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
 
             if 'productName' in self.columns:
                 self['productName'] = self['productName'].apply(lambda s: s.strip().lower()
@@ -282,35 +297,43 @@ class GADataFrame(pd.DataFrame):
                 self['productName'] = self['productName'].apply(lambda s: re.sub(r"\\u[a-f\d]{4}", " ", s))
                 self['productName'] = self['productName'].apply(lambda s: re.sub(r"\s+", " ", s).strip())
 
+            if 'landingPagePlusQueryString' in self.columns:
+                self.rename(columns={'landingPagePlusQueryString': 'landingPagePath'}, inplace=True)
+                self.remove_join_dimensions('landingPagePlusQueryString')
+                self.add_join_dimensions('landingPagePath')
+
+            if 'itemPurchaseQuantity' in self.columns:
+                self.rename(columns={'itemPurchaseQuantity': 'itemQuantity'}, inplace=True)
+
             if 'landingPagePath' in self.columns:
                 self['landingPage'] = self['landingPagePath'].apply(utils.strip_url)
                 self['landingPageParameter'] = self['landingPagePath'].apply(utils.url_extract_parameter)
                 self.rename(columns={'landingPagePath': 'landingPageFull'}, inplace=True)
 
-                join_dimensions = remove_list_item(join_dimensions, 'landingPagePath')
-                join_dimensions.extend(['landingPageFull', 'landingPageParameter', 'landingPage'])
+                self.remove_join_dimensions('landingPagePath')
+                self.add_join_dimensions(['landingPageFull', 'landingPageParameter', 'landingPage'])
 
             if 'transactionsPerSession' in self.columns:
                 self.rename(columns={'transactionsPerSession': 'conversionRate'}, inplace=True)
 
             if 'deviceCategory' in self.columns:
                 self.rename(columns={'deviceCategory': 'device'}, inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'deviceCategory')
-                join_dimensions.extend(['device'])
+                self.remove_join_dimensions('deviceCategory')
+                self.add_join_dimensions('device')
 
             if 'sourceMedium' in self.columns:
                 self['source'] = self.sourceMedium.apply(lambda s: s.split('/')[0].strip())
                 self['medium'] = self.sourceMedium.apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
                 self.drop(columns='sourceMedium', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'sourceMedium')
-                join_dimensions.extend(['source', 'medium'])
+                self.remove_join_dimensions('sourceMedium')
+                self.add_join_dimensions(['source', 'medium'])
 
             if 'sessionSourceMedium' in self.columns:
-                self['sessionSource'] = self['sessionSourceMedium'].apply(lambda s: s.split('/')[0].strip())
-                self['sessionMedium'] = self['sessionSourceMedium'].apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
+                self['source'] = self['sessionSourceMedium'].apply(lambda s: s.split('/')[0].strip())
+                self['medium'] = self['sessionSourceMedium'].apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
                 self.drop(columns='sessionSourceMedium', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'sessionSourceMedium')
-                join_dimensions.extend(['sessionSource', 'sessionMedium'])
+                self.remove_join_dimensions('sessionSourceMedium')
+                self.add_join_dimensions(['source', 'medium'])
 
             if 'date' in self.columns:
                 self.drop(
@@ -320,8 +343,8 @@ class GADataFrame(pd.DataFrame):
                 self.date = pd.to_datetime(self.date, format="%Y%m%d")
                 self.date = self.date.apply(lambda date_time: datetime.datetime.date(date_time))
                 self.rename(columns={'date': 'recordDate'}, inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'date')
-                join_dimensions.extend(['recordDate'])
+                self.remove_join_dimensions('date')
+                self.add_join_dimensions('recordDate')
 
             if 'dateHourMinute' in self.columns:
                 self.drop(
@@ -332,8 +355,8 @@ class GADataFrame(pd.DataFrame):
                 self['recordDate'] = date_time_series.apply(lambda date_time: datetime.datetime.date(date_time))
                 self['recordTime'] = date_time_series.apply(lambda date_time: date_time.time())
                 self.drop(columns='dateHourMinute', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'dateHourMinute')
-                join_dimensions.extend(['recordDate', 'recordTime'])
+                self.remove_join_dimensions('dateHourMinute')
+                self.add_join_dimensions(['recordDate', 'recordTime'])
 
             if 'dateHour' in self.columns:
                 self.drop(
@@ -344,18 +367,19 @@ class GADataFrame(pd.DataFrame):
                 self['recordDate'] = date_time_series.apply(lambda date_time: datetime.datetime.date(date_time))
                 self['recordTime'] = date_time_series.apply(lambda date_time: date_time.time())
                 self.drop(columns='dateHour', inplace=True)
-                join_dimensions = remove_list_item(join_dimensions, 'dateHour')
-                join_dimensions.extend(['recordDate', 'recordTime'])
+                self.remove_join_dimensions('dateHour')
+                self.add_join_dimensions(['recordDate', 'recordTime'])
 
             if 'countryIsoCode' in self.columns:
                 self.countryIsoCode = self.countryIsoCode.apply(iso_code_2_to_3)
 
             if 'countryId' in self.columns:
                 self['countryIsoCode'] = self['countryId'].apply(iso_code_2_to_3)
-                join_dimensions = remove_list_item(join_dimensions, 'countryId')
-                join_dimensions.extend(['countryIsoCode'])
+                self.drop(columns='countryId', inplace=True)
+                self.remove_join_dimensions('countryId')
+                self.add_join_dimensions(['countryIsoCode'])
 
-            self.join_dimensions = [camel_to_snake(_) for _ in join_dimensions]
+            self.snake_case_join_dimensions()
 
         self.snake_case_columns()
 
@@ -363,19 +387,22 @@ class GADataFrame(pd.DataFrame):
             if start_date and end_date:
                 self.insert(loc=0, column="record_date", value=end_date)
                 self.insert(loc=0, column="record_date_start", value=start_date)
-                self.join_dimensions.append("record_date")
-                self.join_dimensions.append("record_date_start")
+                self.add_join_dimensions("record_date")
+                self.add_join_dimensions("record_date_start")
             elif end_date:
                 self.insert(loc=0, column="record_date", value=end_date)
-                self.join_dimensions.append("record_date")
+                self.add_join_dimensions("record_date")
             elif start_date:
                 self.insert(loc=0, column="record_date", value=start_date)
-                self.join_dimensions.append("record_date")
+                self.add_join_dimensions("record_date")
 
     def snake_case_columns(self):
         self.rename(columns={old_col_name: camel_to_snake(old_col_name)
                              for old_col_name in self.columns},
                     inplace=True)
+        
+    def snake_case_join_dimensions(self):
+        self.join_dimensions = [camel_to_snake(_) for _ in self.join_dimensions]
 
     def add_brand_column(self,
                          brand_function: Optional[str],
@@ -494,7 +521,7 @@ class GADataFrame(pd.DataFrame):
             else:
                 self.insert(loc=_loc,
                             column='has_item',
-                            value=self.item_quantity.apply(lambda quantity: False if quantity == 0 else True)
+                            value=self.item_quantity.apply(lambda quantity: True if quantity else False)
                             )
         else:
             pass
@@ -525,6 +552,39 @@ class GADataFrame(pd.DataFrame):
     def bool_column_to_int(self, column_name):
         if column_name in self.columns:
             self[column_name] = self[column_name].apply(lambda b: 1 if b else 0)
+            
+    
+    def add_join_dimensions(self, dimensions: str | list[str]):
+        if isinstance(dimensions, str):
+            dimensions = [dimensions]
+        self.join_dimensions.extend(dimensions)
+        
+    def remove_join_dimensions(self, dimensions: str | list[str]):
+        if isinstance(dimensions, str):
+            dimensions = [dimensions]
+        for _d in dimensions:
+            self.join_dimensions = remove_list_item(self.join_dimensions, _d)
+
+    def fill_nan_with_zeros(self):
+        values = {_col: 0 for _col, _type in self.dtypes.items() if _type == 'float' or _type == 'int'}
+        self.fillna(value=values, inplace=True)
+
+    def join_on_dimensions(self, dataframe, how: str = "outer"):
+        if not set(self.join_dimensions) == set(dataframe.join_dimensions):
+            raise ValueError("Input dataframe must have same join_dimensions")
+
+        _out = GADataFrame(
+            df_input=pd.merge(self, dataframe, how=how, on=self.join_dimensions),
+            response_type=self.response_type,
+            dimensions=list(set(self.dimensions + dataframe.dimensions)),
+            metrics=list(set(self.metrics + dataframe.metrics)),
+            from_ga_response=False,
+            join_dimensions=self.join_dimensions,
+            start_date=min(self.date_range.get('start'), dataframe.date_range.get('start')),
+            end_date=max(self.date_range.get('end'), dataframe.date_range.get('end'))
+        )
+
+        return _out
 
 
 class GSCDataFrame(pd.DataFrame):

@@ -6,7 +6,7 @@ import json
 from typing import List, Union, Optional, Any
 
 from googleapiclient.errors import HttpError as GoogleApiHttpError
-from google.api_core.exceptions import ResourceExhausted
+from google.api_core.exceptions import ResourceExhausted, InvalidArgument
 import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
@@ -490,6 +490,7 @@ class GoogalyticsWrapper:
         offset: int = 0
         complete: bool = False
         quota_reached: bool = False
+        invalid_arguments: bool = False
         rows: list[dict] = []
         metadata: list[dict] = []
         error = None
@@ -501,7 +502,7 @@ class GoogalyticsWrapper:
             num_tries = 0
             success = False
             _rows, _metadata = [], dict()
-            while num_tries < 3 and not quota_reached and not success:
+            while num_tries < 3 and not quota_reached and not invalid_arguments and not success:
                 try:
                     ga4_response = self._ga4_response_raw(
                         start_date=start_date,
@@ -517,6 +518,11 @@ class GoogalyticsWrapper:
                     quota_reached = True
                     complete = True
                     error = _resource_exhausted_error
+                except InvalidArgument as _invalid_argument_error:
+                    if re.search(r"metrics are incompatible", _invalid_argument_error.message):
+                        invalid_arguments = True
+                    complete = True
+                    error = _invalid_argument_error
                 except Exception as _e:
                     complete = True
                     error = _e
@@ -543,14 +549,15 @@ class GoogalyticsWrapper:
             response['quota']['tokens_per_day']['consumed'] = tokens_per_day_consumed
         else:
             response['response_type'] = 'GA4'
-            response['dimension_headers'] = dimensions
-            response['metric_headers'] = metrics
+            response['dimension_headers'] = ga4_dimensions
+            response['metric_headers'] = ga4_metrics
 
         response['response_type'] = 'GA4'
         response['start_date'] = start_date
         response['end_date'] = end_date
         response['total_rows'] = offset
         response['quota_reached'] = quota_reached
+        response['invalid_arguments'] = invalid_arguments
         response['rows'] = rows
         response['error'] = error
 
@@ -773,25 +780,83 @@ class GoogalyticsWrapper:
                     start_date: datetime.date,
                     end_date: datetime.date,
                     ga_dimensions: Optional[List[str]] = None,
-                    ga_metrics: Optional[List[str]] = None,
+                    ga_metrics: list[str] | list[list[str]] = None,
                     add_boolean_metrics: bool = True,
                     filters: Optional[dict] = None,
                     limit: int | None = 100_000_000,
                     return_response: bool = False,
+                    raise_errors: bool = False,
                     filter_google_organic: bool = False) -> gpd.GADataFrame:
 
-        response = self.get_ga4_response(
-                        start_date=start_date,
-                        end_date=end_date,
-                        ga4_dimensions=ga_dimensions,
-                        ga4_metrics=ga_metrics,
-                        limit=limit,
-                    )
+        if all(isinstance(_, str) for _ in ga_metrics):
+            ga_metrics = [ga_metrics]
+
+        metrics_list: list[list[str]] = []
+        for _list in ga_metrics:
+            metrics_list.extend([_list[10 * i:10 * i + 10] for i in range((len(_list) - 1) // 10 + 1)])
+
+        responses: list = []
+        quota_reached: bool = False
+        invalid_arguments: bool = False
+        for _ga_metrics in metrics_list:
+            _r = self.get_ga4_response(
+                            start_date=start_date,
+                            end_date=end_date,
+                            ga4_dimensions=ga_dimensions,
+                            ga4_metrics=_ga_metrics,
+                            limit=limit,
+                        )
+            responses.append(_r)
+            if _r.get('quota_reached'):
+                quota_reached = True
+                break
+            if _r.get('invalid_arguments'):
+                invalid_arguments = True
+                break
 
         if return_response:
-            return response
+            return responses
 
-        ga4_df = gpd.from_response(response=response)
+        if raise_errors:
+            _errors = [_r.get('error') for _r in responses if _r.get('error') is not None]
+            if len(_errors) > 0:
+                raise _errors[0]
+
+        if quota_reached or invalid_arguments:
+            frames = []
+        else:
+            frames = [gpd.from_response(response=_r) for _r in responses]
+
+        if len(frames) == 0:
+            ga4_df = gpd.GADataFrame(df_input=None,
+                                     dimensions=ga_dimensions,
+                                     metrics=ga_metrics,
+                                     start_date=start_date,
+                                     end_date=end_date,
+                                     quota_reached=quota_reached,
+                                     invalid_arguments=invalid_arguments)
+
+        elif all(len(_frame) == 0 for _frame in frames):
+            ga4_df = gpd.GADataFrame(df_input=None,
+                                     dimensions=ga_dimensions,
+                                     metrics=ga_metrics,
+                                     start_date=start_date,
+                                     end_date=end_date)
+        elif len(frames) == 1:
+            ga4_df = frames[0]
+        else:
+            ga4_df = frames[0]
+            for i in range(1, len(frames)):
+                ga4_df = ga4_df.join_on_dimensions(frames[i], how="outer")
+
+        if add_boolean_metrics:
+            ga4_df.add_google_organic_column()
+            ga4_df.add_has_item_column()
+            ga4_df.add_new_user_column()
+            ga4_df.add_shopping_stage_all_column()
+            ga4_df.add_has_site_search_column()
+
+        ga4_df.fill_nan_with_zeros()
 
         return ga4_df
 
@@ -843,6 +908,7 @@ class GoogalyticsWrapper:
                                            end_date=end_date)
             else:
                 ga3_df = gpd.GADataFrame(df_input=None,
+                                         response_type='GA3',
                                          dimensions=ga_dimensions,
                                          metrics=metrics,
                                          start_date=start_date,
@@ -851,6 +917,7 @@ class GoogalyticsWrapper:
 
         if all(len(_frame) == 0 for _frame in frames):
             ga3_df = gpd.GADataFrame(df_input=None,
+                                     response_type='GA3',
                                      dimensions=ga_dimensions,
                                      metrics=ga_metrics,
                                      start_date=start_date,
@@ -869,6 +936,7 @@ class GoogalyticsWrapper:
             for i in range(1, len(frames)):
                 ga3_df = pd.merge(ga3_df, frames[i], how="outer", on=join_dimensions)
             ga3_df = gpd.GADataFrame(df_input=ga3_df,
+                                     response_type='GA3',
                                      dimensions=ga_dimensions,
                                      metrics=ga_metrics,
                                      from_ga_response=False,
