@@ -7,19 +7,20 @@ QUESTION = r"((^what)|(^why)|(^how)|(^can )|(^do )|(^does)|(^where)|(^who(se)? )
 TRANSACTION = r"(.*((buy)|(cost)|(price)|(cheap)|(pricing)|(affordable)))"
 INVESTIGATION = r"(.*((best)|(most)|(cheapest)|( vs)|( v\.s\.)))"
 URL = r"https?://(www\.)?[\w\-_+]*(\.\w{2,4}){0,2}/"
+URL_PATH_CAPTURE = r"(?:https?://)?[^/]*(/.*)"
 
 RE_QUESTION = re.compile(QUESTION)
 RE_TRANSACTIONAL = re.compile(TRANSACTION)
 RE_INVESTIGATION = re.compile(INVESTIGATION)
 RE_URL = re.compile(URL)
+RE_URL_PATH_CAPTURE = re.compile(URL_PATH_CAPTURE)
 RE_C2S = re.compile(r"(?<!^)(?=[A-Z])")
 
 
 def strip_url(url: str) -> str:
     url = url.split('?')[0]
-    _match = RE_URL.match(url)
-    if _match:
-        return url[_match.span()[1] - 1:]
+    if _match := RE_URL_PATH_CAPTURE.match(url):
+        return _match.group(1)
     else:
         return url
 
@@ -33,8 +34,8 @@ def url_extract_parameter(url: str) -> Optional[str]:
 
 def url_strip_domain(url: str) -> Optional[str]:
     _match = RE_URL.match(url)
-    if _match:
-        return url[_match.span()[1] - 1:]
+    if _match := RE_URL_PATH_CAPTURE.match(url):
+        return _match.group(1)
     else:
         return url
 

@@ -306,7 +306,8 @@ class GADataFrame(pd.DataFrame):
                 self.rename(columns={'itemPurchaseQuantity': 'itemQuantity'}, inplace=True)
 
             if 'landingPagePath' in self.columns:
-                self['landingPage'] = self['landingPagePath'].apply(utils.strip_url)
+                self['landingPagePath'] = self['landingPagePath'].apply(utils.url_strip_domain)
+                self['landingPage'] = self['landingPagePath'].apply(lambda _u: _u.split('?')[0])
                 self['landingPageParameter'] = self['landingPagePath'].apply(utils.url_extract_parameter)
                 self.rename(columns={'landingPagePath': 'landingPageFull'}, inplace=True)
 
