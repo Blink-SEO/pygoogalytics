@@ -3,13 +3,15 @@ import logging
 import re
 import datetime
 import json
-from typing import List, Union, Optional, Tuple
+from typing import List, Union, Optional, Any
 
 from googleapiclient.errors import HttpError as GoogleApiHttpError
+from google.api_core.exceptions import ResourceExhausted, InvalidArgument
 import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
-from . import utils
+from .utils import utils
+from .utils.ga4_parser import parse_ga4_response
 from . import pga_logger
 
 
@@ -418,14 +420,38 @@ class GoogalyticsWrapper:
 
         return ga3_response
 
+    def _ga4_response_raw(self,
+                         start_date: datetime.date,
+                         end_date: datetime.date,
+                         ga4_dimensions: list[ga_data_types.Dimension],
+                         ga4_metrics: list[ga_data_types.Metric],
+                         limit: int,
+                         offset: int):
+
+        start_date_string = start_date.strftime("%Y-%m-%d")
+        end_date_string = end_date.strftime("%Y-%m-%d")
+
+        request = ga_data_types.RunReportRequest(
+            property=f"properties/{self.ga4_property_id}",
+            dimensions=ga4_dimensions,
+            metrics=ga4_metrics,
+            date_ranges=[ga_data_types.DateRange(start_date=start_date_string, end_date=end_date_string)],
+            limit=limit,
+            offset=offset,
+            return_property_quota=True
+        )
+        ga4_response = self.ga4_resource.run_report(request)
+
+        return ga4_response
+
     def get_ga4_response(self,
-                         start_date: Union[str, datetime.date],
-                         end_date: Optional[Union[str, datetime.date]] = None,
-                         ga4_dimensions: Optional[Union[List[str], str]] = None,
-                         ga4_metrics: Optional[Union[List[str], str]] = None,
+                         start_date: str | datetime.date,
+                         end_date: str | datetime.date | None = None,
+                         ga4_dimensions: list[str] | str | None = None,
+                         ga4_metrics: list[str] | str | None = None,
                          filter_google_organic: bool = False,
                          raise_http_error: bool = False,
-                         return_raw_response: bool = False):
+                         limit: int | None = None) -> (list, dict, Any):
 
         if not self.ga4_property_id:
             # If there is no view_id we stop here and return None,
@@ -442,34 +468,100 @@ class GoogalyticsWrapper:
         if isinstance(end_date, str):
             end_date = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
 
-        start_date_string = start_date.strftime("%Y-%m-%d")
-        end_date_string = end_date.strftime("%Y-%m-%d")
-
         if ga4_dimensions is None:
-            ga4_dimensions = ['ga:productName']
+            ga4_dimensions = ["dateHour", "landingPage"]
         elif isinstance(ga4_dimensions, str):
-            ga4_dimensions = [ga4_dimensions]
+            ga4_dimensions = [_.strip() for _ in ga4_dimensions.split(',')]
 
         if ga4_metrics is None:
-            ga4_metrics = ['ga:itemRevenue']
+            ga4_metrics = ["totalUsers"]
         elif isinstance(ga4_metrics, str):
-            ga4_metrics = [ga4_metrics]
+            ga4_metrics = [_.strip() for _ in ga4_metrics.split(',')]
 
         dimensions = [ga_data_types.Dimension(name=_) for _ in ga4_dimensions]
         metrics = [ga_data_types.Metric(name=_) for _ in ga4_metrics]
 
-        request = ga_data_types.RunReportRequest(
-            property=f"properties/{self.ga4_property_id}",
-            dimensions=dimensions,
-            metrics=metrics,
-            date_ranges=[ga_data_types.DateRange(start_date=start_date_string, end_date=end_date_string)],
-        )
-        ga4_response = self.ga4_resource.run_report(request)
-        if return_raw_response:
-            pga_logger.info(f"{self.__class__.__name__}.get_ga4_response() :: returning raw response")
-            return ga4_response
+        request_limit = 100_000
+        if limit is None:
+            limit = 1_000_000_000
+        elif limit < 100_000:
+            request_limit = limit
 
-        return ga4_response
+        offset: int = 0
+        complete: bool = False
+        quota_reached: bool = False
+        invalid_arguments: bool = False
+        rows: list[dict] = []
+        metadata: list[dict] = []
+        error = None
+
+        tokens_per_hour_consumed: int = 0
+        tokens_per_day_consumed: int = 0
+
+        while not complete:
+            num_tries = 0
+            success = False
+            _rows, _metadata = [], dict()
+            while num_tries < 3 and not quota_reached and not invalid_arguments and not success:
+                try:
+                    ga4_response = self._ga4_response_raw(
+                        start_date=start_date,
+                        end_date=end_date,
+                        ga4_dimensions=dimensions,
+                        ga4_metrics=metrics,
+                        limit=request_limit,
+                        offset=offset
+                    )
+                    _rows, _metadata = parse_ga4_response(ga4_response)
+                    success = True
+                except ResourceExhausted as _resource_exhausted_error:
+                    quota_reached = True
+                    complete = True
+                    error = _resource_exhausted_error
+                except InvalidArgument as _invalid_argument_error:
+                    if re.search(r"metrics are incompatible", _invalid_argument_error.message):
+                        invalid_arguments = True
+                    complete = True
+                    error = _invalid_argument_error
+                except Exception as _e:
+                    complete = True
+                    error = _e
+                    num_tries += 1
+
+            if success:
+                rows_returned = len(_rows)
+                offset += rows_returned
+                if offset >= limit:
+                    complete = True
+                if rows_returned == 0 or offset >= _metadata.get('meta_row_count', 1_000_000_000):
+                    complete = True
+
+                tokens_per_hour_consumed += _metadata.get('quota', dict()).get('tokens_per_hour', dict()).get('consumed', 0)
+                tokens_per_day_consumed += _metadata.get('quota', dict()).get('tokens_per_day', dict()).get('consumed', 0)
+
+                rows.extend(_rows)
+                metadata.append(_metadata)
+
+        response = dict()
+        if len(metadata) > 0:
+            response = metadata[-1]
+            response['quota']['tokens_per_hour']['consumed'] = tokens_per_hour_consumed
+            response['quota']['tokens_per_day']['consumed'] = tokens_per_day_consumed
+        else:
+            response['response_type'] = 'GA4'
+            response['dimension_headers'] = ga4_dimensions
+            response['metric_headers'] = ga4_metrics
+
+        response['response_type'] = 'GA4'
+        response['start_date'] = start_date
+        response['end_date'] = end_date
+        response['total_rows'] = offset
+        response['quota_reached'] = quota_reached
+        response['invalid_arguments'] = invalid_arguments
+        response['rows'] = rows
+        response['error'] = error
+
+        return response
 
     def get_dates(self,
                   result: str,
@@ -536,7 +628,8 @@ class GoogalyticsWrapper:
                url_list: Optional[Union[str, List[str]]] = None,
                filter_google_organic: bool = False,
                filters: List[dict] = None,
-               add_boolean_metrics: bool = False
+               add_boolean_metrics: bool = False,
+               _return_response: bool = False
                ) -> Union[gpd.GADataFrame, gpd.GSCDataFrame, pd.DataFrame]:
         """
         The `get_df` method accepts the following values for the `result` argument:
@@ -574,7 +667,9 @@ class GoogalyticsWrapper:
                                     ga_metrics=metrics,
                                     add_boolean_metrics=add_boolean_metrics,
                                     filter_google_organic=filter_google_organic,
-                                    filters=filters)
+                                    limit=row_limit,
+                                    filters=filters,
+                                    return_response=_return_response)
         elif re.match(r"GA3", result):
             return self._get_ga3_df(start_date=start_date,
                                     end_date=end_date,
@@ -685,24 +780,94 @@ class GoogalyticsWrapper:
                     start_date: datetime.date,
                     end_date: datetime.date,
                     ga_dimensions: Optional[List[str]] = None,
-                    ga_metrics: Optional[List[str]] = None,
+                    ga_metrics: list[str] | list[list[str]] = None,
                     add_boolean_metrics: bool = True,
                     filters: Optional[dict] = None,
-                    filter_google_organic: bool = False) -> Optional[gpd.GADataFrame]:
-        _df = gpd.GADataFrame(df_input=None,
-                              dimensions=ga_dimensions,
-                              metrics=ga_metrics,
-                              start_date=start_date,
-                              end_date=end_date)
-        return _df
+                    limit: int | None = 100_000_000,
+                    return_response: bool = False,
+                    raise_errors: bool = False,
+                    filter_google_organic: bool = False) -> gpd.GADataFrame:
+
+        if all(isinstance(_, str) for _ in ga_metrics):
+            ga_metrics = [ga_metrics]
+
+        metrics_list: list[list[str]] = []
+        for _list in ga_metrics:
+            metrics_list.extend([_list[10 * i:10 * i + 10] for i in range((len(_list) - 1) // 10 + 1)])
+
+        responses: list = []
+        quota_reached: bool = False
+        invalid_arguments: bool = False
+        for _ga_metrics in metrics_list:
+            _r = self.get_ga4_response(
+                            start_date=start_date,
+                            end_date=end_date,
+                            ga4_dimensions=ga_dimensions,
+                            ga4_metrics=_ga_metrics,
+                            limit=limit,
+                        )
+            responses.append(_r)
+            if _r.get('quota_reached'):
+                quota_reached = True
+                break
+            if _r.get('invalid_arguments'):
+                invalid_arguments = True
+                break
+
+        if return_response:
+            return responses
+
+        if raise_errors:
+            _errors = [_r.get('error') for _r in responses if _r.get('error') is not None]
+            if len(_errors) > 0:
+                raise _errors[0]
+
+        if quota_reached or invalid_arguments:
+            frames = []
+        else:
+            frames = [gpd.from_response(response=_r) for _r in responses]
+
+        if len(frames) == 0:
+            ga4_df = gpd.GADataFrame(df_input=None,
+                                     dimensions=ga_dimensions,
+                                     metrics=ga_metrics,
+                                     start_date=start_date,
+                                     end_date=end_date,
+                                     quota_reached=quota_reached,
+                                     invalid_arguments=invalid_arguments)
+
+        elif all(len(_frame) == 0 for _frame in frames):
+            ga4_df = gpd.GADataFrame(df_input=None,
+                                     dimensions=ga_dimensions,
+                                     metrics=ga_metrics,
+                                     start_date=start_date,
+                                     end_date=end_date)
+        elif len(frames) == 1:
+            ga4_df = frames[0]
+        else:
+            ga4_df = frames[0]
+            for i in range(1, len(frames)):
+                ga4_df = ga4_df.join_on_dimensions(frames[i], how="outer")
+
+        if add_boolean_metrics:
+            ga4_df.add_google_organic_column()
+            ga4_df.add_has_item_column()
+            ga4_df.add_new_user_column()
+            ga4_df.add_shopping_stage_all_column()
+            ga4_df.add_has_site_search_column()
+
+        ga4_df.fill_nan_with_zeros()
+
+        return ga4_df
+
 
     def _get_ga3_df(self,
                     start_date: datetime.date,
                     end_date: datetime.date,
-                    ga_dimensions: Optional[List[str]] = None,
-                    ga_metrics: Optional[List[str]] = None,
+                    ga_dimensions: list[str] | None = None,
+                    ga_metrics: list[str] | None = None,
                     add_boolean_metrics: bool = True,
-                    filters: Optional[dict] = None,
+                    filters: dict | None = None,
                     filter_google_organic: bool = False) -> Optional[gpd.GADataFrame]:
 
         if ga_dimensions is None:
@@ -743,6 +908,7 @@ class GoogalyticsWrapper:
                                            end_date=end_date)
             else:
                 ga3_df = gpd.GADataFrame(df_input=None,
+                                         response_type='GA3',
                                          dimensions=ga_dimensions,
                                          metrics=metrics,
                                          start_date=start_date,
@@ -751,6 +917,7 @@ class GoogalyticsWrapper:
 
         if all(len(_frame) == 0 for _frame in frames):
             ga3_df = gpd.GADataFrame(df_input=None,
+                                     response_type='GA3',
                                      dimensions=ga_dimensions,
                                      metrics=ga_metrics,
                                      start_date=start_date,
@@ -769,6 +936,7 @@ class GoogalyticsWrapper:
             for i in range(1, len(frames)):
                 ga3_df = pd.merge(ga3_df, frames[i], how="outer", on=join_dimensions)
             ga3_df = gpd.GADataFrame(df_input=ga3_df,
+                                     response_type='GA3',
                                      dimensions=ga_dimensions,
                                      metrics=ga_metrics,
                                      from_ga_response=False,
