@@ -10,7 +10,7 @@ in the form of a pandas dataframe."""
 
 setup(
     name='pygoogalytics',
-    version='0.4.1',
+    version='0.4.2',
     description=_desc,
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
@@ -18,7 +18,7 @@ setup(
     author='Joshua Prettyman',
     author_email='joshua@blinkseo.co.uk',
     license='MIT',
-    packages=['pygoogalytics'],
+    packages=['pygoogalytics', 'pygoogalytics.utils'],
     install_requires=[
         'pandas',
         'google-api-python-client>=2.70.0',
