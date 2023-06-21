@@ -6,11 +6,11 @@ import json
 from typing import List, Union, Optional, Any
 
 from googleapiclient.errors import HttpError as GoogleApiHttpError
-from google.api_core.exceptions import ResourceExhausted, InvalidArgument
+from google.api_core.exceptions import ResourceExhausted, InvalidArgument, PermissionDenied
 import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
-from .utils import utils
+from .utils import general_utils
 from .utils.ga4_parser import parse_ga4_response
 from . import pga_logger
 
@@ -50,9 +50,9 @@ class GoogalyticsWrapper:
 
     def __dict__(self) -> dict:
         _dates_test = self.available_dates
-        gsc_date_range_str = utils.date_range_string(dates=_dates_test.get("GSC"),
+        gsc_date_range_str = general_utils.date_range_string(dates=_dates_test.get("GSC"),
                                                      alternate_text="No dates available from GSC")
-        ga3_date_range_str = utils.date_range_string(dates=_dates_test.get("GA3"),
+        ga3_date_range_str = general_utils.date_range_string(dates=_dates_test.get("GA3"),
                                                      alternate_text="No dates available from GA3")
 
         return {
@@ -124,7 +124,7 @@ class GoogalyticsWrapper:
 
     @property
     def api_test_ga3(self) -> dict:
-        if self._api_test_ga3.get('status') is None or not utils.test_time(self._api_test_ga3.get('timestamp'), 3600):
+        if self._api_test_ga3.get('status') is None or not general_utils.test_time(self._api_test_ga3.get('timestamp'), 3600):
             self._perform_api_test_ga3()
         return self._api_test_ga3
 
@@ -489,8 +489,7 @@ class GoogalyticsWrapper:
 
         offset: int = 0
         complete: bool = False
-        quota_reached: bool = False
-        invalid_arguments: bool = False
+        error_type: str | None = None
         rows: list[dict] = []
         metadata: list[dict] = []
         error = None
@@ -502,7 +501,8 @@ class GoogalyticsWrapper:
             num_tries = 0
             success = False
             _rows, _metadata = [], dict()
-            while num_tries < 3 and not quota_reached and not invalid_arguments and not success:
+            while num_tries < 3 and not success:
+                error = None
                 try:
                     ga4_response = self._ga4_response_raw(
                         start_date=start_date,
@@ -514,17 +514,23 @@ class GoogalyticsWrapper:
                     )
                     _rows, _metadata = parse_ga4_response(ga4_response)
                     success = True
+                except PermissionDenied as _permission_denied_error:
+                    complete = True
+                    error_type = 'permission_denied'
+                    error = _permission_denied_error
+                    num_tries = 7
                 except ResourceExhausted as _resource_exhausted_error:
-                    quota_reached = True
+                    error_type = 'quota_reached'
                     complete = True
                     error = _resource_exhausted_error
+                    num_tries = 7
                 except InvalidArgument as _invalid_argument_error:
                     if re.search(r"metrics are incompatible", _invalid_argument_error.message):
-                        invalid_arguments = True
+                        error_type = 'invalid_arguments'
                     complete = True
                     error = _invalid_argument_error
+                    num_tries = 7
                 except Exception as _e:
-                    complete = True
                     error = _e
                     num_tries += 1
 
@@ -556,10 +562,10 @@ class GoogalyticsWrapper:
         response['start_date'] = start_date
         response['end_date'] = end_date
         response['total_rows'] = offset
-        response['quota_reached'] = quota_reached
-        response['invalid_arguments'] = invalid_arguments
         response['rows'] = rows
+
         response['error'] = error
+        response['error_type'] = error_type
 
         return response
 
@@ -796,8 +802,8 @@ class GoogalyticsWrapper:
             metrics_list.extend([_list[10 * i:10 * i + 10] for i in range((len(_list) - 1) // 10 + 1)])
 
         responses: list = []
-        quota_reached: bool = False
-        invalid_arguments: bool = False
+        breaking_error: bool = False
+        breaking_error_type: str | None = None
         for _ga_metrics in metrics_list:
             _r = self.get_ga4_response(
                             start_date=start_date,
@@ -807,11 +813,9 @@ class GoogalyticsWrapper:
                             limit=limit,
                         )
             responses.append(_r)
-            if _r.get('quota_reached'):
-                quota_reached = True
-                break
-            if _r.get('invalid_arguments'):
-                invalid_arguments = True
+            if _t := _r.get('error_type') is not None:
+                breaking_error = True
+                breaking_error_type = _t
                 break
 
         if return_response:
@@ -822,7 +826,7 @@ class GoogalyticsWrapper:
             if len(_errors) > 0:
                 raise _errors[0]
 
-        if quota_reached or invalid_arguments:
+        if breaking_error:
             frames = []
         else:
             frames = [gpd.from_response(response=_r) for _r in responses]
@@ -833,8 +837,7 @@ class GoogalyticsWrapper:
                                      metrics=ga_metrics,
                                      start_date=start_date,
                                      end_date=end_date,
-                                     quota_reached=quota_reached,
-                                     invalid_arguments=invalid_arguments)
+                                     error = breaking_error_type)
 
         elif all(len(_frame) == 0 for _frame in frames):
             ga4_df = gpd.GADataFrame(df_input=None,

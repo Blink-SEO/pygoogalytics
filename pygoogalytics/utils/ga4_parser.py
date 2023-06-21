@@ -1,6 +1,6 @@
 from google.analytics.data_v1beta.types.analytics_data_api import RunReportResponse
 
-from .utils import dict_merge
+from .general_utils import dict_merge
 
 def parse_ga4_response(response: RunReportResponse):
     dimension_headers = [_.name for _ in response.dimension_headers]

@@ -10,14 +10,14 @@ from google.analytics.data_v1beta.types.analytics_data_api import RunReportRespo
 
 from typing import List, Optional, Union, Pattern
 
-from .utils import utils
+from .utils import general_utils
 from .utils.ga4_parser import parse_ga4_response
 
 gpd_logger = logging.getLogger("googlepandas")
 
 
 def camel_to_snake(string: str):
-    return utils.RE_C2S.sub('_', string).lower()
+    return general_utils.RE_C2S.sub('_', string).lower()
 
 
 GA_Types = {
@@ -110,7 +110,7 @@ def from_response(response: dict | RunReportResponse,
                                row_count=response.get('total_row_count'),
                                start_date=response.get('start_date'),
                                end_date=response.get('end_date'),
-                               quota_reached=response.get('quota_reached'),
+                               error=response.get('error_type'),
                                from_ga_response=from_ga_response)
 
     elif response_type == 'GSC':
@@ -160,8 +160,7 @@ class GADataFrame(pd.DataFrame):
                  "time_obtained",
                  "row_count",
                  "response_type",
-                 "quota_reached",
-                 "invalid_arguments"]
+                 "error"]
 
     def __init__(self, df_input,
                  dimensions: list[str] = None,
@@ -173,8 +172,7 @@ class GADataFrame(pd.DataFrame):
                  time_obtained: datetime.datetime = None,
                  row_count: int = 0,
                  response_type: str = 'GA4',
-                 quota_reached: bool = None,
-                 invalid_arguments: bool = None
+                 error: str | None = None
                  ):
 
         if time_obtained:
@@ -196,8 +194,7 @@ class GADataFrame(pd.DataFrame):
         }
         self.row_count = row_count
         self.response_type = response_type
-        self.quota_reached = quota_reached
-        self.invalid_arguments = invalid_arguments
+        self.error = error
 
         if start_date and end_date:
             self.date_range_days = (end_date - start_date).days + 1
@@ -306,9 +303,9 @@ class GADataFrame(pd.DataFrame):
                 self.rename(columns={'itemPurchaseQuantity': 'itemQuantity'}, inplace=True)
 
             if 'landingPagePath' in self.columns:
-                self['landingPagePath'] = self['landingPagePath'].apply(utils.url_strip_domain)
+                self['landingPagePath'] = self['landingPagePath'].apply(general_utils.url_strip_domain)
                 self['landingPage'] = self['landingPagePath'].apply(lambda _u: _u.split('?')[0])
-                self['landingPageParameter'] = self['landingPagePath'].apply(utils.url_extract_parameter)
+                self['landingPageParameter'] = self['landingPagePath'].apply(general_utils.url_extract_parameter)
                 self.rename(columns={'landingPagePath': 'landingPageFull'}, inplace=True)
 
                 self.remove_join_dimensions('landingPagePath')
@@ -650,9 +647,9 @@ class GSCDataFrame(pd.DataFrame):
                 self['query'] = self['query'].apply(lambda s: s.lower())
 
             if 'page' in self.columns:
-                self['landing_page_parameter'] = self['page'].apply(utils.url_extract_parameter)
-                self['landing_page'] = self['page'].apply(utils.strip_url)
-                self['landing_page_nodomain'] = self['page'].apply(utils.url_strip_domain)
+                self['landing_page_parameter'] = self['page'].apply(general_utils.url_extract_parameter)
+                self['landing_page'] = self['page'].apply(general_utils.strip_url)
+                self['landing_page_nodomain'] = self['page'].apply(general_utils.url_strip_domain)
                 self.rename(columns={'page': 'landing_page_full'}, inplace=True)
 
         if from_gsc_response is False and df_input is not None:
@@ -778,21 +775,21 @@ class GSCDataFrame(pd.DataFrame):
 
 
 def is_question(query: str) -> bool:
-    if utils.RE_QUESTION.match(query):
+    if general_utils.RE_QUESTION.match(query):
         return True
     else:
         return False
 
 
 def is_transactional(query: str) -> bool:
-    if utils.RE_TRANSACTIONAL.match(query):
+    if general_utils.RE_TRANSACTIONAL.match(query):
         return True
     else:
         return False
 
 
 def is_investigation(query: str) -> bool:
-    if utils.RE_INVESTIGATION.match(query):
+    if general_utils.RE_INVESTIGATION.match(query):
         return True
     else:
         return False
