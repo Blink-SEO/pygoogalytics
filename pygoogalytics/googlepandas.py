@@ -374,7 +374,7 @@ class GADataFrame(pd.DataFrame):
                 self.add_join_dimensions(['recordDate', 'recordTime'])
 
             if 'countryId' in self.columns:
-                self.rename(columns={'countryId': 'countryIsoCode'})
+                self.rename(columns={'countryId': 'countryIsoCode'}, inplace=True)
                 self.remove_join_dimensions('countryId')
                 self.add_join_dimensions(['countryIsoCode'])
 
