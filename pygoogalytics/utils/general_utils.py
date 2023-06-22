@@ -78,3 +78,15 @@ def dict_merge(dict1, dict2):
     for k, v in dict2.items():
         d[k] = v
     return d
+
+
+def expand_list(list_of_lists: list[list]) -> list:
+    while any(isinstance(_l, list) for _l in list_of_lists):
+        _new_list = []
+        for _item in list_of_lists:
+            if isinstance(_item, list):
+                _new_list.extend(_item)
+            else:
+                _new_list.append(_item)
+        list_of_lists = _new_list
+    return list_of_lists

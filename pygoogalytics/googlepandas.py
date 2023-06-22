@@ -248,6 +248,8 @@ class GADataFrame(pd.DataFrame):
 
             if 'itemPurchaseQuantity' in self.columns:
                 self.rename(columns={'itemPurchaseQuantity': 'itemQuantity'}, inplace=True)
+                self.metrics = remove_list_item(self.metrics, 'itemPurchaseQuantity')
+                self.metrics.append('itemQuantity')
 
             if 'date' in self.columns:
                 self.rename(columns={'date': 'recordDate'}, inplace=True)
@@ -306,6 +308,8 @@ class GADataFrame(pd.DataFrame):
 
             if 'itemPurchaseQuantity' in self.columns:
                 self.rename(columns={'itemPurchaseQuantity': 'itemQuantity'}, inplace=True)
+                self.metrics = remove_list_item(self.metrics, 'itemPurchaseQuantity')
+                self.metrics.append('itemQuantity')
 
             if 'landingPagePath' in self.columns:
                 self['landingPagePath'] = self['landingPagePath'].apply(general_utils.url_strip_domain)

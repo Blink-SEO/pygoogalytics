@@ -837,7 +837,7 @@ class GoogalyticsWrapper:
         if len(frames) == 0:
             ga4_df = gpd.GADataFrame(df_input=None,
                                      dimensions=ga_dimensions,
-                                     metrics=ga_metrics,
+                                     metrics=general_utils.expand_list(ga_metrics),
                                      start_date=start_date,
                                      end_date=end_date,
                                      error = breaking_error_type)
@@ -845,7 +845,7 @@ class GoogalyticsWrapper:
         elif all(len(_frame) == 0 for _frame in frames):
             ga4_df = gpd.GADataFrame(df_input=None,
                                      dimensions=ga_dimensions,
-                                     metrics=ga_metrics,
+                                     metrics=general_utils.expand_list(ga_metrics),
                                      start_date=start_date,
                                      end_date=end_date)
         elif len(frames) == 1:
