@@ -827,6 +827,9 @@ class GoogalyticsWrapper:
         else:
             frames = [gpd.from_response(response=_r) for _r in responses]
 
+        # if len(frames)>0:
+        #     return frames
+
         if len(frames) == 0:
             ga4_df = gpd.GADataFrame(df_input=None,
                                      dimensions=ga_dimensions,

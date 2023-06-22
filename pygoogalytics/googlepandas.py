@@ -222,10 +222,15 @@ class GADataFrame(pd.DataFrame):
                 self.remove_join_dimensions('landingPagePath')
                 self.add_join_dimensions(['landingPage', 'landingPageFull', 'landingPageParameter'])
 
+            if 'countryId' in self.columns:
+                self.rename(columns={'countryId': 'countryIsoCode'}, inplace=True)
+                self.remove_join_dimensions('countryId')
+                self.add_join_dimensions('countryIsoCode')
+
             if 'deviceCategory' in self.columns:
                 self.rename(columns={'deviceCategory': 'device'}, inplace=True)
                 self.remove_join_dimensions('deviceCategory')
-                self.add_join_dimensions(['device'])
+                self.add_join_dimensions('device')
 
             if 'sourceMedium' in self.columns:
                 self['source'] = None
@@ -370,14 +375,13 @@ class GADataFrame(pd.DataFrame):
                 self.remove_join_dimensions('dateHour')
                 self.add_join_dimensions(['recordDate', 'recordTime'])
 
-            if 'countryIsoCode' in self.columns:
-                self.countryIsoCode = self.countryIsoCode.apply(iso_code_2_to_3)
-
             if 'countryId' in self.columns:
-                self['countryIsoCode'] = self['countryId'].apply(iso_code_2_to_3)
-                self.drop(columns='countryId', inplace=True)
+                self.rename(columns={'countryId': 'countryIsoCode'})
                 self.remove_join_dimensions('countryId')
                 self.add_join_dimensions(['countryIsoCode'])
+
+            if 'countryIsoCode' in self.columns:
+                self.countryIsoCode = self.countryIsoCode.apply(iso_code_2_to_3)
 
             self.snake_case_join_dimensions()
 
