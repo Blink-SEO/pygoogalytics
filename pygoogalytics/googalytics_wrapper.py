@@ -11,7 +11,7 @@ import google.analytics.data_v1beta.types as ga_data_types
 
 from . import googlepandas as gpd
 from .utils import general_utils
-from .utils.ga4_parser import parse_ga4_response
+from .utils.ga4_parser import parse_ga4_response, parse_ga3_response
 from . import pga_logger
 
 
@@ -265,14 +265,14 @@ class GoogalyticsWrapper:
             log_error=log_error,
             page_token=None
         )
-        if r is None:
-            return None
 
         data = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
         column_header = r.get('reports', [{}])[0].get('columnHeader')
         next_page_token = r.get('reports', [{}])[0].get('nextPageToken')
+        error = r.get('error', None)
+        error_type = r.get('error_type', None)
 
-        while next_page_token:
+        while next_page_token and not error:
             r = self._ga3_response_raw(
                 start_date=start_date,
                 end_date=end_date,
@@ -283,20 +283,21 @@ class GoogalyticsWrapper:
                 raise_http_error=raise_http_error,
                 page_token=next_page_token
             )
-            _d = r.get('reports', [{}])[0].get('data', {}).get('rows', [])
+            error = r.get('error', None)
+            error_type = r.get('error_type', None)
+            _d = r.get('reports', [dict()])[0].get('data', dict()).get('rows', [])
             data.extend(_d)
             next_page_token = r.get('reports', [{}])[0].get('nextPageToken')
 
-        synthetic_response = {
-            'reports': [
-                {
-                    'columnHeader': column_header,
-                    'data': {'rows': data}
-                }
-            ]
-        }
+        rows, response = parse_ga3_response(column_header=column_header, response_rows=data)
 
-        return synthetic_response
+        response['response_type'] = 'GA3'
+        response['start_date'] = start_date
+        response['end_date'] = end_date
+        response['rows'] = rows
+
+        response['error'] = error
+        response['error_type'] = error_type
 
     def _ga3_response_raw(self,
                           start_date: Union[str, datetime.date],
@@ -388,16 +389,21 @@ class GoogalyticsWrapper:
 
         ga3_request = {'reportRequests': [_request_dict]}
 
+        _error = None
+        _error_type = None
         try:
             ga3_response = self.ga3_resource.reports().batchGet(body=ga3_request).execute()
             if return_raw_response:
                 pga_logger.info(f"{self.__class__.__name__}.get_ga3_response() :: returning raw response")
                 return ga3_response
         except GoogleApiHttpError as http_error:
+            _error = http_error
             _msg = ''
             if re.match(".*user does not have sufficient permissions", repr(http_error).lower()):
+                _error_type = 'insufficient_permissions'
                 _msg = f"{self.__class__.__name__}.get_ga3_response() :: user does not have sufficient permissions"
             if re.match(".*viewid must be set", repr(http_error).lower()):
+                _error_type = 'missing_view_id'
                 _msg = f"{self.__class__.__name__}.get_ga3_response() :: view id is not set"
 
             if log_error and _msg:
@@ -405,18 +411,29 @@ class GoogalyticsWrapper:
 
             if raise_http_error:
                 raise http_error
-            else:
-                return None
 
-        try:
-            _rows = ga3_response.get('reports', [])[0].get('data').get('rows', None)
-        except AttributeError:
-            _rows = None
+            ga3_response = None
+        except Exception as _e:
+            _error = _e
+            _error_type = 'other'
+            ga3_response = None
 
-        if _rows is None:
-            pga_logger.debug(f"{self.__class__.__name__}.get_ga3_response() :: empty ga response")
-            # raise EmptyResponseError("GA3", start_date=start_date, end_date=end_date)
-            return None
+        if ga3_response is None:
+            ga3_response = dict()
+        else:
+            try:
+                _rows = ga3_response.get('reports', [])[0].get('data').get('rows', None)
+            except AttributeError as _e:
+                _rows = None
+
+            if _rows is None:
+                _error = AttributeError()
+                _error_type = 'empty_response'
+                pga_logger.debug(f"{self.__class__.__name__}.get_ga3_response() :: empty ga response")
+                # raise EmptyResponseError("GA3", start_date=start_date, end_date=end_date)
+
+        ga3_response['error'] = _error
+        ga3_response['error_type'] = _error_type
 
         return ga3_response
 
@@ -447,8 +464,8 @@ class GoogalyticsWrapper:
     def get_ga4_response(self,
                          start_date: str | datetime.date,
                          end_date: str | datetime.date | None = None,
-                         ga4_dimensions: list[str] | str | None = None,
-                         ga4_metrics: list[str] | str | None = None,
+                         ga_dimensions: list[str] | str | None = None,
+                         ga_metrics: list[str] | str | None = None,
                          filter_google_organic: bool = False,
                          raise_http_error: bool = False,
                          limit: int | None = None) -> (list, dict, Any):
@@ -468,18 +485,18 @@ class GoogalyticsWrapper:
         if isinstance(end_date, str):
             end_date = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
 
-        if ga4_dimensions is None:
-            ga4_dimensions = ["dateHour", "landingPage"]
-        elif isinstance(ga4_dimensions, str):
-            ga4_dimensions = [_.strip() for _ in ga4_dimensions.split(',')]
+        if ga_dimensions is None:
+            ga_dimensions = ["dateHour", "landingPage"]
+        elif isinstance(ga_dimensions, str):
+            ga_dimensions = [_.strip() for _ in ga_dimensions.split(',')]
 
-        if ga4_metrics is None:
-            ga4_metrics = ["totalUsers"]
-        elif isinstance(ga4_metrics, str):
-            ga4_metrics = [_.strip() for _ in ga4_metrics.split(',')]
+        if ga_metrics is None:
+            ga_metrics = ["totalUsers"]
+        elif isinstance(ga_metrics, str):
+            ga_metrics = [_.strip() for _ in ga_metrics.split(',')]
 
-        dimensions = [ga_data_types.Dimension(name=_) for _ in ga4_dimensions]
-        metrics = [ga_data_types.Metric(name=_) for _ in ga4_metrics]
+        dimensions = [ga_data_types.Dimension(name=_) for _ in ga_dimensions]
+        metrics = [ga_data_types.Metric(name=_) for _ in ga_metrics]
 
         request_limit = 100_000
         if limit is None:
@@ -555,8 +572,8 @@ class GoogalyticsWrapper:
             response['quota']['tokens_per_day']['consumed'] = tokens_per_day_consumed
         else:
             response['response_type'] = 'GA4'
-            response['dimension_headers'] = ga4_dimensions
-            response['metric_headers'] = ga4_metrics
+            response['dimension_headers'] = ga_dimensions
+            response['metric_headers'] = ga_metrics
 
         response['response_type'] = 'GA4'
         response['start_date'] = start_date
@@ -783,6 +800,7 @@ class GoogalyticsWrapper:
         return gsc_df
 
     def _get_ga4_df(self,
+                    response_type: str,
                     start_date: datetime.date,
                     end_date: datetime.date,
                     ga_dimensions: Optional[List[str]] = None,
@@ -791,7 +809,7 @@ class GoogalyticsWrapper:
                     filters: Optional[dict] = None,
                     limit: int | None = 100_000_000,
                     return_response: bool = False,
-                    raise_errors: bool = False,
+                    raise_errors: bool = True,
                     filter_google_organic: bool = False) -> gpd.GADataFrame:
 
         if all(isinstance(_, str) for _ in ga_metrics):
@@ -805,13 +823,17 @@ class GoogalyticsWrapper:
         breaking_error: bool = False
         breaking_error_type: str | None = None
         for _ga_metrics in metrics_list:
-            _r = self.get_ga4_response(
-                            start_date=start_date,
-                            end_date=end_date,
-                            ga4_dimensions=ga_dimensions,
-                            ga4_metrics=_ga_metrics,
-                            limit=limit,
-                        )
+            if response_type == 'GA3':
+                _r = self.get_ga3_response(
+                    start_date=start_date,
+                    end_date=end_date,
+                    ga4_dimensions=ga_dimensions,
+                    ga4_metrics=_ga_metrics,
+                    limit=limit,
+                )
+            elif response_type == 'GA4':
+                _r = self.get_ga4_response(start_date=start_date, end_date=end_date, ga_dimensions=ga_dimensions,
+                                           ga_metrics=_ga_metrics, limit=limit)
             responses.append(_r)
             if _t := _r.get('error_type') is not None:
                 breaking_error = True
@@ -1016,3 +1038,5 @@ class GoogalyticsWrapper:
         for _i, url in enumerate(url_list):
             _frames.append(self.urlinspection_dict(url, inspection_index=_i))
         return pd.DataFrame(_frames)
+
+

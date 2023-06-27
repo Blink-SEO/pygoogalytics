@@ -40,3 +40,36 @@ def parse_ga4_response(response: RunReportResponse):
     }
 
     return rows, metadata
+
+
+def parse_ga3_response(response = None,
+              column_header = None,
+              response_rows = None,
+              report_index: int = 0):
+
+    if response is not None:
+        column_header = response.get('reports', [dict()])[report_index].get('columnHeader')
+        response_rows = response.get('reports', [dict()])[report_index].get('data', dict()).get('rows')
+
+    if column_header is None or response_rows is None:
+        raise KeyError("Incompatible response")
+
+    dimensions = column_header.get('dimensions', [])
+    _metrics_headers = column_header.get('metricHeader', dict()).get('metricHeaderEntries', [dict()])
+    metrics = [_.get('name') for _ in _metrics_headers]
+
+    dimensions = [_.strip('ga:') for _ in dimensions]
+    metrics = [_.strip('ga:') for _ in metrics]
+
+    _dm = dimensions+metrics
+    _rows = [_.get('dimensions') + _.get('metrics', [dict()])[0].get('values') for _ in response_rows]
+    rows = [{_k: _v for _k, _v in zip(_dm, _row_values)} for _row_values in _rows]
+
+    metadata = {
+        'response_type': 'GA3',
+        'dimension_headers': dimensions,
+        'metric_headers': metrics,
+        'row_count': len(rows)
+    }
+
+    return rows, metadata

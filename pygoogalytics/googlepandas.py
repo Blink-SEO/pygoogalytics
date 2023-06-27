@@ -592,6 +592,11 @@ class GADataFrame(pd.DataFrame):
 
         return _out
 
+    def add_row_id(self):
+        self.reset_index(drop=True, inplace=True)
+        self.reset_index(drop=False, inplace=True)
+        self.rename(columns={'index': 'row_id'}, inplace=True)
+
 
 class GSCDataFrame(pd.DataFrame):
     """
