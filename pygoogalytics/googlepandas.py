@@ -11,7 +11,7 @@ from google.analytics.data_v1beta.types.analytics_data_api import RunReportRespo
 from typing import List, Optional, Union, Pattern
 
 from .utils import general_utils
-from .utils.ga4_parser import parse_ga4_response
+from .utils.ga4_parser import parse_ga4_response, parse_ga3_response
 
 gpd_logger = logging.getLogger("googlepandas")
 
@@ -21,43 +21,43 @@ def camel_to_snake(string: str):
 
 
 GA_Types = {
-    'ga:date': str,
-    'ga:dateHourMinute': str,
-    'ga:landingPagePath': str,
-    'ga:pagePath': str,
-    'ga:productName': str,
-    'ga:productSku': str,
-    'ga:productListName': str,
-    'ga:productListPosition': str,
-    'ga:source': str,
-    'ga:medium': str,
-    'ga:sourceMedium': str,
-    'ga:channelGrouping': str,
-    'ga:referralPath': str,
-    'ga:campaign': str,
-    'ga:keyword': str,
-    'ga:deviceCategory': str,
-    'ga:countryIsoCode': str,
-    'ga:itemRevenue': float,
-    'ga:itemQuantity': float,
-    'ga:users': int,
-    'ga:timeOnPage': float,
-    'ga:newUsers': int,
-    'ga:sessions': int,
-    'ga:sessionDuration': float,
-    'ga:transactionsPerSession': float,  # i.e. conversion_rate
-    'ga:bounceRate': float,
-    'ga:transactions': float,
-    'ga:transactionRevenue': float,
-    'ga:pageViews': float,
-    'ga:pageviewsPerSession': float,
-    'ga:avgTimeOnPage': float,
-    'ga:avgPageLoadTime': float,
-    'ga:exits': int,
-    'ga:productDetailViews': float,
-    'ga:productListCTR': float,
-    'ga:productListClicks': float,
-    'ga:productListViews': float
+    'date': str,
+    'dateHourMinute': str,
+    'landingPagePath': str,
+    'pagePath': str,
+    'productName': str,
+    'productSku': str,
+    'productListName': str,
+    'productListPosition': str,
+    'source': str,
+    'medium': str,
+    'sourceMedium': str,
+    'channelGrouping': str,
+    'referralPath': str,
+    'campaign': str,
+    'keyword': str,
+    'deviceCategory': str,
+    'countryIsoCode': str,
+    'itemRevenue': float,
+    'itemQuantity': float,
+    'users': int,
+    'timeOnPage': float,
+    'newUsers': int,
+    'sessions': int,
+    'sessionDuration': float,
+    'transactionsPerSession': float,  # i.e. conversion_rate
+    'bounceRate': float,
+    'transactions': float,
+    'transactionRevenue': float,
+    'pageViews': float,
+    'pageviewsPerSession': float,
+    'avgTimeOnPage': float,
+    'avgPageLoadTime': float,
+    'exits': int,
+    'productDetailViews': float,
+    'productListCTR': float,
+    'productListClicks': float,
+    'productListViews': float
 }
 
 
@@ -73,45 +73,12 @@ def from_response(response: dict | RunReportResponse,
     if response_type is None:
         response_type = get_response_type(response)
 
-    if response_type == 'GA3':
-        rows = response.get('reports', [])[report_index]['data']['rows']
-        dimensions = response.get('reports')[report_index].get('columnHeader').get('dimensions')
-        _metric_header_entries = response.get('reports')[report_index] \
-            .get('columnHeader') \
-            .get('metricHeader') \
-            .get('metricHeaderEntries')
-        metrics = [_d['name'] for _d in _metric_header_entries]
-        gpd_logger.debug(f"from_response: creating GADataFrame. dimensions = [{dimensions}], metrics = [{metrics}]")
-        return GADataFrame(df_input=rows,
-                           response_type='GA3',
-                           dimensions=dimensions, metrics=metrics,
-                           start_date=start_date, end_date=end_date,
-                           from_ga_response=True)
-    elif response_type == 'GA4':
+    if response_type == 'GA3' or response_type == 'GA4':
         if isinstance(response, RunReportResponse):
-            rows, metadata = parse_ga4_response(response)
-            return GADataFrame(df_input=rows,
-                               response_type='GA4',
-                               dimensions=metadata.get('dimension_headers'),
-                               metrics=metadata.get('metric_headers'),
-                               row_count=metadata.get('row_count'),
-                               start_date=start_date, end_date=end_date,
-                               from_ga_response=True)
-        else:
-            rows = response.get('rows')
-            from_ga_response = True
-            if len(rows) == 0:
-                rows = None
-                from_ga_response = False
-            return GADataFrame(df_input=rows,
-                               response_type='GA4',
-                               dimensions=response.get('dimension_headers'),
-                               metrics=response.get('metric_headers'),
-                               row_count=response.get('total_row_count'),
-                               start_date=response.get('start_date'),
-                               end_date=response.get('end_date'),
-                               error=response.get('error_type'),
-                               from_ga_response=from_ga_response)
+            response = parse_ga4_response(response)
+        elif response.get('reports', None):
+            response = parse_ga3_response(response)
+        return from_standard_analytics_response(response, start_date=start_date, end_date=end_date)
 
     elif response_type == 'GSC':
         rows = response.get('rows', [])
@@ -123,6 +90,27 @@ def from_response(response: dict | RunReportResponse,
         _gsc_df.response_aggregation = response_aggregation
         return _gsc_df
 
+def from_standard_analytics_response(response: dict, start_date: datetime.date=None, end_date: datetime.date=None):
+    rows = response.get('rows')
+    from_ga_response = True
+    if len(rows) == 0:
+        rows = None
+        from_ga_response = False
+
+    if response.get('start_date'):
+        start_date = response.get('start_date')
+    if response.get('end_date'):
+        end_date = response.get('end_date')
+
+    return GADataFrame(df_input=rows,
+                       response_type='GA4',
+                       dimensions=response.get('dimension_headers'),
+                       metrics=response.get('metric_headers'),
+                       row_count=response.get('row_count'),
+                       start_date=start_date,
+                       end_date=end_date,
+                       error=response.get('error_type'),
+                       from_ga_response=from_ga_response)
 
 def from_csv(csv_file_path):
     pandas_df = pd.read_csv(csv_file_path)
@@ -142,8 +130,6 @@ class GADataFrame(pd.DataFrame):
     Subclass of pandas.DataFrame specifically for use with Google Analytics responses.
     The subclass must be initialized with a GA response object and will create a dataframe
     from the report indexed by `report_index` (default 0).
-
-    The DataFrame column headings are the same as the GA dimensions and metrics but without the 'ga:' prefix
 
     In addition to pandas DataFrame functionality, the GADataFrame has additional metadata attributes:
         dimensions:      list of the GA dimensions returned in the response
@@ -202,7 +188,7 @@ class GADataFrame(pd.DataFrame):
             self.date_range_days = None
 
         if df_input is None:
-            self.join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
+            self.join_dimensions = self.dimensions
             super().__init__(None, columns=[strip_ga_prefix(_) for _ in dimensions + metrics])
 
             if 'landingPagePlusQueryString' in self.columns:
@@ -604,9 +590,7 @@ class GSCDataFrame(pd.DataFrame):
     The subclass must be initialized with a GSC response object and will create a dataframe
     from the report.
 
-    The DataFrame column headings are the same as the GA dimensions and metrics but without the 'ga:' prefix
-
-    In addition to pandas DataFrame functionality, the GADataFrame has additional metadata attributes:
+    In addition to pandas DataFrame functionality, the GSCDataFrame has additional metadata attributes:
         dimensions: list of the GSC dimensions
     """
 
@@ -636,7 +620,7 @@ class GSCDataFrame(pd.DataFrame):
 
         if df_input is None:
             self.metrics = ['clicks', 'impressions', 'ctr', 'position']
-            super().__init__(None, columns=[strip_ga_prefix(_) for _ in self.dimensions + self.metrics])
+            super().__init__(None, columns=self.dimensions + self.metrics)
             if 'date' in self.columns:
                 self.rename(columns={'date': 'record_date'}, inplace=True)
             if 'page' in self.columns:
@@ -855,15 +839,6 @@ def separate_regex_category_function2(product_name: str, categories_dict: dict):
         if re.match(subcat_dict.get(sub_cat), product_name.lower()):
             return sub_cat
     return 'other'
-
-
-def strip_ga_prefix(s: str) -> str:
-    if len(s) < 3:
-        return s
-    elif s[:3] == 'ga:':
-        return s[3:]
-    else:
-        return s
 
 
 def get_response_type(response: dict | RunReportResponse):

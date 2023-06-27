@@ -1,3 +1,5 @@
+import re
+
 from google.analytics.data_v1beta.types.analytics_data_api import RunReportResponse
 
 from .general_utils import dict_merge
@@ -28,7 +30,7 @@ def parse_ga4_response(response: RunReportResponse):
         }
     }
 
-    metadata = {
+    response = {
         'response_type': 'GA4',
         'dimension_headers': dimension_headers,
         'metric_headers': metric_headers,
@@ -36,10 +38,11 @@ def parse_ga4_response(response: RunReportResponse):
         'currency_code': response.metadata.currency_code,
         'time_zone': response.metadata.time_zone,
         'row_count': len(rows),
-        'quota': _quota_dict
+        'quota': _quota_dict,
+        'rows': rows
     }
 
-    return rows, metadata
+    return response
 
 
 def parse_ga3_response(response = None,
@@ -58,18 +61,23 @@ def parse_ga3_response(response = None,
     _metrics_headers = column_header.get('metricHeader', dict()).get('metricHeaderEntries', [dict()])
     metrics = [_.get('name') for _ in _metrics_headers]
 
-    dimensions = [_.strip('ga:') for _ in dimensions]
-    metrics = [_.strip('ga:') for _ in metrics]
+    dimensions = [remove_ga_prefix(_) for _ in dimensions]
+    metrics = [remove_ga_prefix(_) for _ in metrics]
 
     _dm = dimensions+metrics
     _rows = [_.get('dimensions') + _.get('metrics', [dict()])[0].get('values') for _ in response_rows]
     rows = [{_k: _v for _k, _v in zip(_dm, _row_values)} for _row_values in _rows]
 
-    metadata = {
+    response = {
         'response_type': 'GA3',
         'dimension_headers': dimensions,
         'metric_headers': metrics,
-        'row_count': len(rows)
+        'row_count': len(rows),
+        'rows': rows
     }
 
-    return rows, metadata
+    return response
+
+
+def remove_ga_prefix(key: str) -> str:
+    return re.sub(r'^ga:', '', key)

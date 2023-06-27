@@ -289,15 +289,22 @@ class GoogalyticsWrapper:
             data.extend(_d)
             next_page_token = r.get('reports', [{}])[0].get('nextPageToken')
 
-        rows, response = parse_ga3_response(column_header=column_header, response_rows=data)
+        # print(f"\ndimensions: {ga_dimensions} \n"
+        #       f"metrics: {ga_metrics} \n "
+        #       f"data: len={len(data)}, \n"
+        #       f"error_type: {error_type} \n"
+        #       f"column_header: {column_header} \n")
+
+        response = parse_ga3_response(column_header=column_header, response_rows=data)
 
         response['response_type'] = 'GA3'
         response['start_date'] = start_date
         response['end_date'] = end_date
-        response['rows'] = rows
 
         response['error'] = error
         response['error_type'] = error_type
+
+        return response
 
     def _ga3_response_raw(self,
                           start_date: Union[str, datetime.date],
@@ -340,6 +347,9 @@ class GoogalyticsWrapper:
         elif isinstance(ga_metrics, str):
             ga_metrics = [ga_metrics]
 
+        ga_dimensions = ['ga:' + _s if not re.match(r'ga:', _s) else _s for _s in ga_dimensions]
+        ga_metrics = ['ga:'+_s if not re.match(r'ga:', _s) else _s for _s in ga_metrics]
+
         _dfc = []  # dimension filter clauses
         _mfc = []  # metric filter clauses
         _orderby = []
@@ -381,7 +391,7 @@ class GoogalyticsWrapper:
             "metricFilterClauses": _mfc,
             "orderBys": _orderby,
             'metrics': [{'expression': _m} for _m in ga_metrics],
-            'pageSize': 100000
+            'pageSize': 100_000
         }
 
         if page_token:
@@ -684,7 +694,9 @@ class GoogalyticsWrapper:
             url_list = [url_list]
 
         if re.match(r"GA4", result):
-            return self._get_ga4_df(start_date=start_date,
+            return self._get_analytics_df(
+                response_type='GA4',
+                start_date=start_date,
                                     end_date=end_date,
                                     ga_dimensions=dimensions,
                                     ga_metrics=metrics,
@@ -694,7 +706,8 @@ class GoogalyticsWrapper:
                                     filters=filters,
                                     return_response=_return_response)
         elif re.match(r"GA3", result):
-            return self._get_ga3_df(start_date=start_date,
+            return self._get_analytics_df(response_type='GA3',
+                                    start_date=start_date,
                                     end_date=end_date,
                                     ga_dimensions=dimensions,
                                     ga_metrics=metrics,
@@ -799,7 +812,7 @@ class GoogalyticsWrapper:
 
         return gsc_df
 
-    def _get_ga4_df(self,
+    def _get_analytics_df(self,
                     response_type: str,
                     start_date: datetime.date,
                     end_date: datetime.date,
@@ -827,13 +840,22 @@ class GoogalyticsWrapper:
                 _r = self.get_ga3_response(
                     start_date=start_date,
                     end_date=end_date,
-                    ga4_dimensions=ga_dimensions,
-                    ga4_metrics=_ga_metrics,
-                    limit=limit,
+                    ga_dimensions=ga_dimensions,
+                    ga_metrics=_ga_metrics,
+                    raise_http_error=False
                 )
             elif response_type == 'GA4':
-                _r = self.get_ga4_response(start_date=start_date, end_date=end_date, ga_dimensions=ga_dimensions,
-                                           ga_metrics=_ga_metrics, limit=limit)
+                _r = self.get_ga4_response(
+                    start_date=start_date,
+                    end_date=end_date,
+                    ga_dimensions=ga_dimensions,
+                    ga_metrics=_ga_metrics,
+                    raise_http_error=False,
+                    limit=limit
+                )
+            else:
+                raise KeyError("response_type not recognised")
+
             responses.append(_r)
             if _t := _r.get('error_type') is not None:
                 breaking_error = True
