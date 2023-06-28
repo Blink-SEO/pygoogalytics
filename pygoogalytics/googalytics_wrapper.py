@@ -244,15 +244,38 @@ class GoogalyticsWrapper:
         return gsc_response
 
     def get_ga3_response(self,
-                         start_date: Union[str, datetime.date],
-                         end_date: Optional[Union[str, datetime.date]] = None,
-                         ga_dimensions: Optional[Union[List[str], str]] = None,
-                         ga_metrics: Optional[Union[List[str], str]] = None,
-                         ga_filters: Optional[dict] = None,
+                         start_date: str | datetime.date,
+                         end_date: str | datetime.date | None = None,
+                         dimensions: list[str] | str | None = None,
+                         metrics: list[str] | str | None = None,
+                         ga_filters: dict | None = None,
                          raise_http_error: bool = False,
                          log_error: bool = True,
                          filter_google_organic: bool = False,
                          _print_log: bool = False) -> Optional[dict]:
+
+        if end_date is None:
+            end_date = start_date
+
+        if isinstance(start_date, str):
+            start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+        if isinstance(end_date, str):
+            end_date = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        if dimensions is None:
+            dimensions = ['productName']
+        elif isinstance(dimensions, str):
+            dimensions = dimensions.split('+')
+        dimensions = [re.sub(r"^ga:", "", _) for _ in dimensions]
+
+        if metrics is None:
+            metrics = ['itemRevenue']
+        elif isinstance(metrics, str):
+            metrics = [metrics]
+        metrics = [re.sub(r"^ga:", "", _) for _ in metrics]
+
+        ga_dimensions = ['ga:' + _s if not re.match(r'ga:', _s) else _s for _s in dimensions]
+        ga_metrics = ['ga:'+_s if not re.match(r'ga:', _s) else _s for _s in metrics]
 
         r = self._ga3_response_raw(
             start_date=start_date,
@@ -307,11 +330,11 @@ class GoogalyticsWrapper:
         return response
 
     def _ga3_response_raw(self,
-                          start_date: Union[str, datetime.date],
-                          end_date: Optional[Union[str, datetime.date]] = None,
-                          ga_dimensions: Optional[Union[List[str], str]] = None,
-                          ga_metrics: Optional[Union[List[str], str]] = None,
-                          ga_filters: Optional[dict] = None,
+                          start_date: datetime.date,
+                          end_date: datetime.date,
+                          ga_dimensions: list[str],
+                          ga_metrics: List[str],
+                          ga_filters: dict | None = None,
                           filter_google_organic: bool = False,
                           raise_http_error: bool = False,
                           log_error: bool = True,
@@ -326,29 +349,8 @@ class GoogalyticsWrapper:
             if not raise_http_error:
                 return None
 
-        if end_date is None:
-            end_date = start_date
-
-        if isinstance(start_date, str):
-            start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
-        if isinstance(end_date, str):
-            end_date = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
-
         start_date_string = start_date.strftime("%Y-%m-%d")
         end_date_string = end_date.strftime("%Y-%m-%d")
-
-        if ga_dimensions is None:
-            ga_dimensions = ['ga:productName']
-        elif isinstance(ga_dimensions, str):
-            ga_dimensions = ga_dimensions.split('+')
-
-        if ga_metrics is None:
-            ga_metrics = ['ga:itemRevenue']
-        elif isinstance(ga_metrics, str):
-            ga_metrics = [ga_metrics]
-
-        ga_dimensions = ['ga:' + _s if not re.match(r'ga:', _s) else _s for _s in ga_dimensions]
-        ga_metrics = ['ga:'+_s if not re.match(r'ga:', _s) else _s for _s in ga_metrics]
 
         _dfc = []  # dimension filter clauses
         _mfc = []  # metric filter clauses

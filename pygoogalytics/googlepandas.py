@@ -189,7 +189,7 @@ class GADataFrame(pd.DataFrame):
 
         if df_input is None:
             self.join_dimensions = self.dimensions
-            super().__init__(None, columns=[strip_ga_prefix(_) for _ in dimensions + metrics])
+            super().__init__(None, columns=dimensions + metrics)
 
             if 'landingPagePlusQueryString' in self.columns:
                 self.rename(columns={'landingPagePlusQueryString': 'landingPagePath'}, inplace=True)
@@ -262,22 +262,6 @@ class GADataFrame(pd.DataFrame):
             super().__init__(df_input)
 
         if from_ga_response:
-            if response_type == 'GA3':
-                for _i in range(len(self.metrics) - 1, -1, -1):
-                    self.insert(loc=0, column=strip_ga_prefix(self.metrics[_i]),
-                                value=self['metrics'].apply(lambda x: x[0].get('values')[_i]
-                                                            ).astype(GA_Types.get(self.metrics[_i], str))
-                                )
-                self.drop(columns='metrics', inplace=True)
-
-                for _i in range(len(self.dimensions) - 1, -1, -1):
-                    self.insert(loc=0, column=strip_ga_prefix(self.dimensions[_i]),
-                                value=self['dimensions'].apply(lambda x: x[_i]
-                                                               ).astype(GA_Types.get(self.dimensions[_i], str))
-                                )
-                self.drop(columns='dimensions', inplace=True)
-                self.join_dimensions = [strip_ga_prefix(_) for _ in self.dimensions]
-
             if 'productName' in self.columns:
                 self['productName'] = self['productName'].apply(lambda s: s.strip().lower()
                                                                 .replace('-', ' ')
