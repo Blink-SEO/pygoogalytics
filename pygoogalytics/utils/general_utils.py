@@ -90,3 +90,13 @@ def expand_list(list_of_lists: list[list]) -> list:
                 _new_list.append(_item)
         list_of_lists = _new_list
     return list_of_lists
+
+def parse_date(d):
+    if m:=re.match(r"\d{8}", d):
+        return datetime.datetime.strptime(m.group(0), "%Y%m%d").date()
+    elif m:=re.match(r"\d{4}-\d{2}-\d{2}", d):
+        return datetime.datetime.strptime(m.group(0), "%Y-%m-%d").date()
+    elif m:=re.match(r"\d{4} \d{2} \d{2}", d):
+        return datetime.datetime.strptime(m.group(0), "%Y %m %d").date()
+    else:
+        raise ValueError(f"Cannot parse date string '{d}'")

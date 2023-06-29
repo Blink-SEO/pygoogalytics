@@ -45,6 +45,23 @@ def parse_ga4_response(response: RunReportResponse):
     return response
 
 
+def join_ga4_responses(responses: list[dict]) -> dict:
+    _rows = []
+    for _r in responses:
+        _rows.append(_r.get('rows', []))
+    response = {
+        'response_type': 'GA4',
+        'dimension_headers': responses[0].get('dimension_headers'),
+        'metric_headers': responses[0].get('metric_headers'),
+        'meta_row_count': responses[0].get('meta_row_count'),
+        'currency_code': responses[0].get('currency_code'),
+        'time_zone': responses[0].get('time_zone'),
+        'row_count': len(_rows),
+        'quota': responses[-1].get('quota'),
+        'rows': _rows
+    }
+    return response
+
 def parse_ga3_response(response = None,
               column_header = None,
               response_rows = None,
