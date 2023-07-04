@@ -260,6 +260,9 @@ class GADataFrame(pd.DataFrame):
 
         else:
             super().__init__(df_input)
+            for _c in self.columns:
+                if _c in self.metrics:
+                    self[_c] = self[_c].astype('float')
 
         if from_ga_response:
             if 'productName' in self.columns:
@@ -549,6 +552,11 @@ class GADataFrame(pd.DataFrame):
         if not set(self.join_dimensions) == set(dataframe.join_dimensions):
             raise ValueError("Input dataframe must have same join_dimensions")
 
+        if self.error:
+            _e = self.error
+        else:
+            _e = dataframe.error
+
         _out = GADataFrame(
             df_input=pd.merge(self, dataframe, how=how, on=self.join_dimensions),
             response_type=self.response_type,
@@ -557,7 +565,8 @@ class GADataFrame(pd.DataFrame):
             from_ga_response=False,
             join_dimensions=self.join_dimensions,
             start_date=min(self.date_range.get('start'), dataframe.date_range.get('start')),
-            end_date=max(self.date_range.get('end'), dataframe.date_range.get('end'))
+            end_date=max(self.date_range.get('end'), dataframe.date_range.get('end')),
+            error=_e
         )
 
         return _out
