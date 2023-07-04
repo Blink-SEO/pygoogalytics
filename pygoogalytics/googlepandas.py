@@ -20,47 +20,6 @@ def camel_to_snake(string: str):
     return general_utils.RE_C2S.sub('_', string).lower()
 
 
-GA_Types = {
-    'date': str,
-    'dateHourMinute': str,
-    'landingPagePath': str,
-    'pagePath': str,
-    'productName': str,
-    'productSku': str,
-    'productListName': str,
-    'productListPosition': str,
-    'source': str,
-    'medium': str,
-    'sourceMedium': str,
-    'channelGrouping': str,
-    'referralPath': str,
-    'campaign': str,
-    'keyword': str,
-    'deviceCategory': str,
-    'countryIsoCode': str,
-    'itemRevenue': float,
-    'itemQuantity': float,
-    'users': int,
-    'timeOnPage': float,
-    'newUsers': int,
-    'sessions': int,
-    'sessionDuration': float,
-    'transactionsPerSession': float,  # i.e. conversion_rate
-    'bounceRate': float,
-    'transactions': float,
-    'transactionRevenue': float,
-    'pageViews': float,
-    'pageviewsPerSession': float,
-    'avgTimeOnPage': float,
-    'avgPageLoadTime': float,
-    'exits': int,
-    'productDetailViews': float,
-    'productListCTR': float,
-    'productListClicks': float,
-    'productListViews': float
-}
-
-
 def from_response(response: dict | RunReportResponse,
                   response_type: str = None,
                   report_index: int = 0,
@@ -494,13 +453,12 @@ class GADataFrame(pd.DataFrame):
 
     def add_has_item_column(self):
         if 'item_quantity' in self.columns:
-            _loc = self.columns.get_loc('item_quantity') + 1
             if len(self) == 0:
                 self['has_item'] = None
             else:
-                self.insert(loc=_loc,
+                self.insert(loc=self.columns.get_loc('item_quantity') + 1,
                             column='has_item',
-                            value=self.item_quantity.apply(lambda quantity: True if quantity else False)
+                            value=self.item_quantity.apply(lambda quantity: True if quantity>0 else False)
                             )
         else:
             pass
