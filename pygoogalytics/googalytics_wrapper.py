@@ -451,7 +451,6 @@ class GoogalyticsWrapper:
             offset=offset,
             return_property_quota=True
         )
-        print("running report...")
         ga4_response = self.ga4_resource.run_report(request)
 
         return ga4_response
@@ -507,9 +506,6 @@ class GoogalyticsWrapper:
             while num_tries < 3 and not success:
                 error = None
                 try:
-                    print(f"{num_tries}: running report ({start_date}, {end_date}) with ")
-                    print(f"\t\t\tdimensions: {dimensions}")
-                    print(f"\t\t\tmetrics: {metrics}\n")
                     ga4_response = self._ga4_response_raw(
                         start_date=start_date,
                         end_date=end_date,
@@ -518,7 +514,6 @@ class GoogalyticsWrapper:
                         limit=request_limit,
                         offset=offset
                     )
-                    print("report ran!!!")
                     response = parse_ga4_response(ga4_response)
                     success = True
                 except PermissionDenied as _permission_denied_error:
@@ -545,16 +540,21 @@ class GoogalyticsWrapper:
                 offset += response.get('row_count', 0)
                 if offset >= limit:
                     complete = True
-                if response.get('row_count', 0) == 0 or offset >= _metadata.get('meta_row_count', 1_000_000_000):
+                if response.get('row_count', 0) == 0 or offset >= response.get('meta_row_count', 1_000_000_000):
                     complete = True
-
-                tokens_per_hour_consumed += _metadata.get('quota', dict()).get('tokens_per_hour', dict()).get('consumed', 0)
-                tokens_per_day_consumed += _metadata.get('quota', dict()).get('tokens_per_day', dict()).get('consumed', 0)
 
                 responses.append(response)
 
-        if len(responses) > 0:
+        if len(responses) > 1:
             response = join_ga4_responses(responses)
+            if response.get('row_count', 0) == 0:
+                error = AttributeError("Empty response")
+                error_type = "empty_response"
+        elif len(responses) == 1:
+            response = responses[0]
+            if response.get('row_count', 0) == 0:
+                error = AttributeError("Empty response")
+                error_type = "empty_response"
         else:
             response = {
                 'response_type': 'GA4',
@@ -562,6 +562,8 @@ class GoogalyticsWrapper:
                 'metric_headers': ga_metrics,
                 'rows': []
             }
+
+
 
         response['start_date'] = start_date
         response['end_date'] = end_date
@@ -848,9 +850,9 @@ class GoogalyticsWrapper:
                 raise KeyError("response_type not recognised")
 
             responses.append(_r)
-            if _t := _r.get('error_type') is not None:
+            if _r.get('error_type') is not None:
                 breaking_error = True
-                breaking_error_type = _t
+                breaking_error_type = _r.get('error_type')
                 break
 
         if return_response:
@@ -882,7 +884,8 @@ class GoogalyticsWrapper:
                                      dimensions=ga_dimensions,
                                      metrics=general_utils.expand_list(ga_metrics),
                                      start_date=start_date,
-                                     end_date=end_date)
+                                     end_date=end_date,
+                                        error = breaking_error_type)
         elif len(frames) == 1:
             dataframe = frames[0]
         else:
@@ -901,98 +904,6 @@ class GoogalyticsWrapper:
 
         return dataframe
 
-
-    def _get_ga3_df(self,
-                    start_date: datetime.date,
-                    end_date: datetime.date,
-                    ga_dimensions: list[str] | None = None,
-                    ga_metrics: list[str] | None = None,
-                    add_boolean_metrics: bool = True,
-                    filters: dict | None = None,
-                    filter_google_organic: bool = False) -> Optional[gpd.GADataFrame]:
-
-        if ga_dimensions is None:
-            ga_dimensions = ['ga:date',
-                             'ga:landingPagePath',
-                             'ga:productName',
-                             'ga:source',
-                             'ga:medium']
-
-        if ga_metrics is None:
-            ga_metrics = ['ga:itemRevenue',
-                          'ga:itemQuantity',
-                          'ga:users',
-                          'ga:newUsers',
-                          'ga:sessions',
-                          'ga:sessionDuration']
-        else:
-            ga_metrics = list(ga_metrics)
-
-        metrics_list = [ga_metrics[10 * i:10 * i + 10] for i in range((len(ga_metrics) - 1) // 10 + 1)]
-
-        frames = []
-        for metrics in metrics_list:
-            ga3_response = self.get_ga3_response(
-                start_date=start_date,
-                end_date=end_date,
-                ga_dimensions=ga_dimensions,
-                ga_metrics=metrics,
-                ga_filters=filters,
-                filter_google_organic=filter_google_organic
-            )
-
-            if ga3_response is not None:
-                # Make a dataframe of the ga response
-                ga3_df = gpd.from_response(response=ga3_response,
-                                           response_type="GA3",
-                                           start_date=start_date,
-                                           end_date=end_date)
-            else:
-                ga3_df = gpd.GADataFrame(df_input=None,
-                                         response_type='GA3',
-                                         dimensions=ga_dimensions,
-                                         metrics=metrics,
-                                         start_date=start_date,
-                                         end_date=end_date)
-            frames.append(ga3_df)
-
-        if all(len(_frame) == 0 for _frame in frames):
-            ga3_df = gpd.GADataFrame(df_input=None,
-                                     response_type='GA3',
-                                     dimensions=ga_dimensions,
-                                     metrics=ga_metrics,
-                                     start_date=start_date,
-                                     end_date=end_date)
-        else:
-            join_dimensions = frames[0].join_dimensions
-            if not all(set(_df.join_dimensions) == set(join_dimensions) for _df in frames):
-                print(f"{start_date} - {end_date}:")
-                for _i, _df in enumerate(frames):
-                    print(f"\t{_i} :")
-                    print(f"\t\tlength:     {len(_df)}")
-                    print(f"\t\tmetrics:    {_df.metrics}")
-                    print(f"\t\tdimensions: {_df.join_dimensions}")
-                raise AssertionError("unmatched join dimensions")
-            ga3_df = frames[0]
-            for i in range(1, len(frames)):
-                ga3_df = pd.merge(ga3_df, frames[i], how="outer", on=join_dimensions)
-            ga3_df = gpd.GADataFrame(df_input=ga3_df,
-                                     response_type='GA3',
-                                     dimensions=ga_dimensions,
-                                     metrics=ga_metrics,
-                                     from_ga_response=False,
-                                     join_dimensions=join_dimensions,
-                                     start_date=start_date,
-                                     end_date=end_date)
-
-        if add_boolean_metrics:
-            ga3_df.add_google_organic_column()
-            ga3_df.add_has_item_column()
-            ga3_df.add_new_user_column()
-            ga3_df.add_shopping_stage_all_column()
-            ga3_df.add_has_site_search_column()
-
-        return ga3_df
 
     def urlinspection_dict(self, url: str, inspection_index: int = None) -> dict:
         _now = datetime.datetime.utcnow()
