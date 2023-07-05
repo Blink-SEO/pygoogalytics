@@ -437,6 +437,9 @@ class GoogalyticsWrapper:
                          limit: int,
                          offset: int):
 
+        if not self.ga4_property_id:
+            raise PermissionError("ga4_property_id is not set")
+
         request = ga_data_types.RunReportRequest(
             property=f"properties/{self.ga4_property_id}",
             dimensions=ga4_dimensions,
@@ -464,13 +467,6 @@ class GoogalyticsWrapper:
                          raise_http_error: bool = False,
                          limit: int | None = None) -> (list, dict, Any):
 
-        if not self.ga4_property_id:
-            # If there is no view_id we stop here and return None,
-            # unless raise_http_error is True, in which case we continue to the execution and see what errors come up
-            pga_logger.warning(f"{self.__class__.__name__}.get_ga4_response() :: ga4_property_id is not set")
-            if not raise_http_error:
-                return None
-
         if ga_dimensions is None:
             ga_dimensions = ["dateHour", "landingPage"]
         elif isinstance(ga_dimensions, str):
@@ -490,14 +486,14 @@ class GoogalyticsWrapper:
         elif limit < 100_000:
             request_limit = limit
 
-        offset: int = 0
+        tokens_per_hour_consumed: int = 0
+        tokens_per_day_consumed: int = 0
+
         complete: bool = False
         error_type: str | None = None
         responses: list[dict] = []
         error = None
-
-        tokens_per_hour_consumed: int = 0
-        tokens_per_day_consumed: int = 0
+        offset: int = 0
 
         while not complete:
             num_tries = 0
@@ -520,18 +516,23 @@ class GoogalyticsWrapper:
                     complete = True
                     error_type = 'permission_denied'
                     error = _permission_denied_error
-                    num_tries = 7
+                    num_tries = 1_000
                 except ResourceExhausted as _resource_exhausted_error:
                     error_type = 'quota_reached'
                     complete = True
                     error = _resource_exhausted_error
-                    num_tries = 7
+                    num_tries = 1_000
+                except PermissionError as _permission_error:
+                    complete = True
+                    error_type = 'missing_permissions'
+                    error = _permission_error
+                    num_tries = 1_000
                 except InvalidArgument as _invalid_argument_error:
                     if re.search(r"metrics are incompatible", _invalid_argument_error.message):
                         error_type = 'invalid_arguments'
                     complete = True
                     error = _invalid_argument_error
-                    num_tries = 7
+                    num_tries = 1_000
                 except Exception as _e:
                     error = _e
                     num_tries += 1

@@ -721,6 +721,11 @@ class GSCDataFrame(pd.DataFrame):
         else:
             return binned_df
 
+    def add_row_id(self):
+        self.reset_index(drop=True, inplace=True)
+        self.reset_index(drop=False, inplace=True)
+        self.rename(columns={'index': 'row_id'}, inplace=True)
+
 
 def is_question(query: str) -> bool:
     if general_utils.RE_QUESTION.match(query):
