@@ -15,6 +15,13 @@ from .utils.ga4_parser import parse_ga4_response, parse_ga3_response, join_ga4_r
 from . import pga_logger
 
 
+class MissingID(AttributeError):
+    """Error raised when Property ID is not specified"""
+    def __init__(self, message="Missing ID"):
+        self.message = message
+        super().__init__(self.message)
+
+
 class GoogalyticsWrapper:
     """
     The GoogalyticsWrapper requires the following arguments to access data:
@@ -434,7 +441,7 @@ class GoogalyticsWrapper:
                          offset: int):
 
         if not self.ga4_property_id:
-            raise PermissionError("ga4_property_id is not set")
+            raise MissingID("ga4_property_id is not set")
 
         request = ga_data_types.RunReportRequest(
             property=f"properties/{self.ga4_property_id}",
@@ -459,8 +466,6 @@ class GoogalyticsWrapper:
                          end_date: datetime.date,
                          dimensions: list[str],
                          metrics: list[str],
-                         filter_google_organic: bool = False,
-                         raise_http_error: bool = False,
                          limit: int | None = None) -> (list, dict, Any):
 
         ga_dimensions = [ga_data_types.Dimension(name=_) for _ in dimensions]
@@ -471,9 +476,6 @@ class GoogalyticsWrapper:
             limit = 1_000_000_000
         elif limit < 100_000:
             request_limit = limit
-
-        tokens_per_hour_consumed: int = 0
-        tokens_per_day_consumed: int = 0
 
         complete: bool = False
         error_type: str | None = None
@@ -508,10 +510,10 @@ class GoogalyticsWrapper:
                     complete = True
                     error = _resource_exhausted_error
                     num_tries = 1_000
-                except PermissionError as _permission_error:
+                except MissingID as _id_error:
                     complete = True
-                    error_type = 'missing_permissions'
-                    error = _permission_error
+                    error_type = 'missing_id'
+                    error = _id_error
                     num_tries = 1_000
                 except InvalidArgument as _invalid_argument_error:
                     if re.search(r"metrics are incompatible", _invalid_argument_error.message):
@@ -549,8 +551,6 @@ class GoogalyticsWrapper:
                 'metric_headers': metrics,
                 'rows': []
             }
-
-
 
         response['start_date'] = start_date
         response['end_date'] = end_date
@@ -669,7 +669,6 @@ class GoogalyticsWrapper:
                 limit=row_limit,
                 filters=filters,
                 return_response=_return_response,
-                raise_errors=raise_errors
             )
         elif re.match(r"GA3", result):
             return self._get_analytics_df(
@@ -680,7 +679,6 @@ class GoogalyticsWrapper:
                 metrics=metrics,
                 filters=filters,
                 add_boolean_metrics=add_boolean_metrics,
-                raise_errors=raise_errors,
                 return_response=_return_response
             )
         elif re.match(r"GSC", result) and result != "GSCQ":
@@ -791,7 +789,7 @@ class GoogalyticsWrapper:
                     filters: Optional[dict] = None,
                     limit: int | None = 100_000_000,
                     return_response: bool = False,
-                    raise_errors: bool = True) -> gpd.GADataFrame:
+                    raise_errors: bool = False) -> gpd.GADataFrame:
 
         if dimensions is None:
             dimensions = ['dateHour']
@@ -842,7 +840,6 @@ class GoogalyticsWrapper:
                     end_date=end_date,
                     dimensions=dimensions,
                     metrics=_metrics,
-                    raise_http_error=False,
                     limit=limit
                 )
             else:
