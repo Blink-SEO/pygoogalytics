@@ -13,8 +13,6 @@ from typing import List, Optional, Union, Pattern
 from .utils import general_utils
 from .utils.ga4_parser import parse_ga4_response, parse_ga3_response
 
-gpd_logger = logging.getLogger("googlepandas")
-
 
 def camel_to_snake(string: str):
     return general_utils.RE_C2S.sub('_', string).lower()
@@ -42,7 +40,6 @@ def from_response(response: dict | RunReportResponse,
     elif response_type == 'GSC':
         rows = response.get('rows', [])
         response_aggregation = response.get('responseAggregationType', None)
-        gpd_logger.debug("from_response: creating GSCDataFrame")
         _gsc_df = GSCDataFrame(df_input=rows,
                                gsc_dimensions=gsc_dimensions,
                                from_gsc_response=True)
@@ -75,11 +72,9 @@ def from_csv(csv_file_path):
     pandas_df = pd.read_csv(csv_file_path)
     r_type = response_type_from_file(csv_file_path)
     if r_type == 'GA':
-        gpd_logger.debug("creating GADataFrame from csv")
         return GADataFrame(df_input=pandas_df,
                            from_ga_response=False)
     if r_type == 'GSC' or r_type == 'GSCQ':
-        gpd_logger.debug("creating GSCDataFrame from csv")
         return GSCDataFrame(df_input=pandas_df,
                             from_gsc_response=False)
 
@@ -506,6 +501,9 @@ class GADataFrame(pd.DataFrame):
         values = {_col: 0 for _col, _type in self.dtypes.items() if _type == 'float' or _type == 'int'}
         self.fillna(value=values, inplace=True)
 
+        values = {_col: 0 for _col in self.columns if all(pd.isna(_v) for _v in self[_col].to_list())}
+        self.fillna(value=values, inplace=True)
+
     def join_on_dimensions(self, dataframe, how: str = "outer"):
         if not set(self.join_dimensions) == set(dataframe.join_dimensions):
             raise ValueError("Input dataframe must have same join_dimensions")
@@ -560,9 +558,6 @@ class GSCDataFrame(pd.DataFrame):
         :param from_gsc_response: The init can either come from some date structure that ordinary pandas DataFrame
         can initialize, or a GSC response dictionary
         """
-
-        # self.logger = logging.getLogger("GADataFrame")
-        # self.logger.debug("initializing GADataFrame")
 
         if gsc_dimensions is None:
             gsc_dimensions = ['country', 'device', 'page', 'query']

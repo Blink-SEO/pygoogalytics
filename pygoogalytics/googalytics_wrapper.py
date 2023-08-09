@@ -847,9 +847,10 @@ class GoogalyticsWrapper:
 
             responses.append(_r)
             if _r.get('error_type') is not None:
-                breaking_error = True
-                breaking_error_type = _r.get('error_type')
-                break
+                if _r.get('error_type') != 'empty_response':
+                    breaking_error = True
+                    breaking_error_type = _r.get('error_type')
+                    break
 
         if return_response:
             return responses
@@ -881,7 +882,7 @@ class GoogalyticsWrapper:
                                      metrics=general_utils.expand_list(metrics_list),
                                      start_date=start_date,
                                      end_date=end_date,
-                                        error = breaking_error_type)
+                                     error = breaking_error_type)
         elif len(frames) == 1:
             dataframe = frames[0]
         else:
