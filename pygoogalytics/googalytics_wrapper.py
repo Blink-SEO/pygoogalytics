@@ -889,6 +889,8 @@ class GoogalyticsWrapper:
             dataframe = frames[0]
             for i in range(1, len(frames)):
                 dataframe = dataframe.join_on_dimensions(frames[i], how="outer")
+            if len(dataframe) == 0 and not dataframe.error:
+                dataframe.error = 'empty_response'
 
         if add_boolean_metrics:
             dataframe.add_google_organic_column()

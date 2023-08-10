@@ -513,6 +513,9 @@ class GADataFrame(pd.DataFrame):
         else:
             _e = dataframe.error
 
+        if _e == 'empty_response':
+            _e = None
+
         _out = GADataFrame(
             df_input=pd.merge(self, dataframe, how=how, on=self.join_dimensions),
             response_type=self.response_type,
