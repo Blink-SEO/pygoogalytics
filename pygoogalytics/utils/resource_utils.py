@@ -16,11 +16,11 @@ def googleads_client_from_key_file(path: str):
     return googleads_client_from_yaml(googleads_yaml_string=googleads_yaml_string)
 
 
-def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str]:
+def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str, dict]:
     googleads_yaml_dict = yaml.safe_load(googleads_yaml_string)
     default_customer_id = parse_ads_id(googleads_yaml_dict.get('default_customer_id'))
     googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version="v12")
-    return googleads_client, default_customer_id
+    return googleads_client, default_customer_id, googleads_yaml_dict
 
 
 def parse_ads_id(customer_id: str | int) -> str:

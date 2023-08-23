@@ -8,7 +8,7 @@ import uuid
 import re
 
 from math import ceil
-from typing import List, Optional, Union, Tuple, Any
+from typing import Any
 
 from google.ads.googleads.client import GoogleAdsClient
 # from google.ads.googleads.v10.resources import KeywordPlanGeoTarget
@@ -22,7 +22,7 @@ DEFAULT_LANGUAGE_ID = "1000"  # language defaults to "1000" (i.e. English)
 
 DEFAULT_KEYWORD_PLAN_CAMPAIGN_CPC_BID = 1000000
 DEFAULT_KEYWORD_PLAN_AD_GROUP_CPC_BID = 250000
-API_MULTIPLE_REQUEST_WAIT_TIME = 20
+API_MULTIPLE_REQUEST_WAIT_TIME = 2
 
 RE_URL = re.compile(r"https?://(www\.)?[\w\-_+]*(\.\w{2,4}){0,2}/")
 
@@ -31,7 +31,7 @@ class ClientWrapper:
     def __init__(self,
                  googleads_client: GoogleAdsClient,
                  customer_id: str,
-                 location_codes: List[str] = None,
+                 location_codes: list[str] | None = None,
                  language_id: str = None
                  ):
         self.client: GoogleAdsClient = googleads_client
@@ -181,7 +181,7 @@ class ClientWrapper:
 
         return pd.DataFrame(_out)
 
-    def _get_keyword_plan_ids(self) -> List[int]:
+    def _get_keyword_plan_ids(self) -> list[int]:
         """Return keyword_plan ad groups -- these don't show up as regular ad groups"""
 
         query = """
@@ -226,7 +226,7 @@ class ClientWrapper:
         print(f"Removed campaign {campaign_response.results[0].resource_name}.")
 
     def remove_keyword_plan(self,
-                            keyword_plan_id: Union[int, str] = None,
+                            keyword_plan_id: int | str = None,
                             keyword_plan_resource_name: str = None):
         # https://developers.google.com/google-ads/api/docs/samples/remove-campaign
         keyword_plan_service = self.client.get_service("KeywordPlanService")
@@ -281,8 +281,8 @@ class KeywordPlanService(ClientWrapper):
     def __init__(self,
                  googleads_client: GoogleAdsClient,
                  customer_id: str,
-                 location_codes: List[str] = None,
-                 language_id: Optional[str] = None
+                 location_codes: list[str] = None,
+                 language_id: str | None = None
                  ):
         super().__init__(googleads_client=googleads_client,
                          customer_id=customer_id,
@@ -299,32 +299,48 @@ class KeywordPlanService(ClientWrapper):
         self.default_keyword_plan_ad_group_cpc_bid_micros = DEFAULT_KEYWORD_PLAN_AD_GROUP_CPC_BID
 
     def get_keyword_metrics(self,
-                            keywords: Union[List[str], str],
-                            location_codes: List[str] = None,
+                            keywords: list[str] | str,
+                            location_codes: list[str] = None,
                             language_id: str = None,
                             print_progress: bool = False,
-                            calculated_fields: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                            calculated_fields: bool = True,
+                            concat_locations: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
 
         if isinstance(keywords, str):
             keywords = [keywords]
 
+        if location_codes is None:
+            location_codes = self.location_codes
+
         keyword_list_partition = _partition_list(_list=keywords, n=2_000)
-        frames: List[pd.DataFrame] = []
+        frames: list[pd.DataFrame] = []
         keyword_plans = []
 
-        for _keyword_sublist in keyword_list_partition:
+        for _sublist_index, _keyword_sublist in enumerate(keyword_list_partition):
+            if _sublist_index > 0:
+                time.sleep(API_MULTIPLE_REQUEST_WAIT_TIME)
+
             try:
-                historical_metrics_df, _kwp = self.get_historical_metrics_df(
-                    keywords=_keyword_sublist,
-                    location_codes=location_codes,
-                    language_id=language_id,
-                    calculated_fields=calculated_fields
-                )
+                if concat_locations:
+                    historical_metrics_df, _kwps = self.get_historical_metrics_df_concat_locations(
+                        keywords=_keyword_sublist,
+                        location_codes=location_codes,
+                        language_id=language_id,
+                        calculated_fields=calculated_fields
+                    )
+                else:
+                    historical_metrics_df, _kwps = self.get_historical_metrics_df(
+                        keywords=_keyword_sublist,
+                        location_codes=location_codes,
+                        language_id=language_id,
+                        calculated_fields=calculated_fields
+                    )
 
                 if historical_metrics_df is not None:
-                    keyword_plans.append(_kwp)
+                    keyword_plans.extend(_kwps)
                     frames.append(historical_metrics_df)
-                    self.remove_keyword_plan(keyword_plan_resource_name=_kwp)
+                    for _kwp in _kwps:
+                        self.remove_keyword_plan(keyword_plan_resource_name=_kwp)
 
             except GoogleAdsException:
                 print(f"GoogleAdsException encountered after obtaining {len(frames)} frames")
@@ -333,13 +349,12 @@ class KeywordPlanService(ClientWrapper):
             if print_progress:
                 print(f"{len(frames)} - obtained metrics for {len(frames[-1])} keywords")
 
-            time.sleep(API_MULTIPLE_REQUEST_WAIT_TIME)
-
         _df = pd.concat(frames)
 
         metrics_df: pd.DataFrame = _df.drop(columns=['volume_trend_tuples'])
 
-        monthly_volume_df: pd.DataFrame = _df[['date_obtained',
+        monthly_volume_df: pd.DataFrame = _df[['country_iso_code',
+                                               'date_obtained',
                                                'query',
                                                'keyword',
                                                'status',
@@ -356,28 +371,49 @@ class KeywordPlanService(ClientWrapper):
         monthly_volume_df.dropna(axis='index', subset=['month'], inplace=True)
 
         monthly_volume_df['record_date'] = monthly_volume_df.apply(
-            lambda df: _conv_date(df['year'], df['month'], 15),
+            lambda df: _conv_date(df['year'], df['month'], 15, month_index=0),
             axis=1
         )
         monthly_volume_df['volume'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[0])
 
         monthly_volume_df.drop(
-            columns=['month_enum', 'volume_trend_tuples', 'month', 'year' 'month_name'],
+            columns=['month_enum', 'volume_trend_tuples', 'month', 'year', 'month_name'],
             inplace=True
         )
 
-        metrics_df.drop_duplicates(subset=["query", "keyword"], keep="first", inplace=True)
-        monthly_volume_df.drop_duplicates(subset=["query", "keyword", "record_date"], keep="first", inplace=True)
+        metrics_df.drop_duplicates(subset=["country_iso_code", "query", "keyword"], keep="first", inplace=True)
+        monthly_volume_df.drop_duplicates(subset=["country_iso_code", "query", "keyword", "record_date"], keep="first", inplace=True)
 
         metrics_df.reset_index(drop=True, inplace=True)
         monthly_volume_df.reset_index(drop=True, inplace=True)
 
+        _recent_dates = monthly_volume_df[
+            ["country_iso_code", 'query', 'keyword', 'record_date']
+        ].groupby(by=["country_iso_code", 'query', 'keyword']).max().reset_index()
+
+        _competition_subset = pd.merge(
+            left=_recent_dates,
+            right=metrics_df[["country_iso_code", 'query', 'keyword', 'competition', 'competition_index']],
+            on=["country_iso_code", 'query', 'keyword'],
+            how='inner'
+        )
+
+        metrics_df = pd.merge(left=metrics_df, right=_recent_dates, on=["country_iso_code", 'query', 'keyword'], how='left')
+
+        monthly_volume_df = pd.merge(
+            left=monthly_volume_df,
+            right=_competition_subset,
+            on=["country_iso_code", 'query', 'keyword', 'record_date'],
+            how='left'
+        )
+
         return metrics_df, monthly_volume_df
 
     def get_forcast_metrics_df(self,
-                               keywords: List[str],
-                               location_codes: List[str] = None,
-                               language_id: str = None) -> pd.DataFrame:
+                               keywords: list[str],
+                               location_codes: list[str] = None,
+                               language_id: str = None) -> tuple[pd.DataFrame, str]:
+
         keyword_plan, stripped_keyword_dict = self.add_keyword_plan(keywords=keywords,
                                                                     match_type="EXACT",
                                                                     location_codes=location_codes,
@@ -392,13 +428,13 @@ class KeywordPlanService(ClientWrapper):
         _df = pd.merge(_df, keywords_df, how="left", on="keyword_id")
         _df = _df[['date_obtained', 'query', 'impressions', 'clicks', 'ctr', 'average_cpc', 'cost_micros']]
 
-        return _df
+        return _df, keyword_plan
 
     def _get_historical_metrics_df(self,
-                                   keywords: List[str],
-                                   location_codes: List[str] = None,
+                                   keywords: list[str],
+                                   location_codes: list[str] = None,
                                    language_id: str = None,
-                                   calculated_fields: bool = True) -> Tuple[pd.DataFrame, Any]:
+                                   calculated_fields: bool = True) -> tuple[pd.DataFrame, str]:
         keyword_plan, stripped_keyword_dict = self.add_keyword_plan(keywords=keywords,
                                                                     match_type="EXACT",
                                                                     location_codes=location_codes,
@@ -417,18 +453,47 @@ class KeywordPlanService(ClientWrapper):
             _df["volume_12monthavg"] = _df["volume_trend"].apply(_volume_12monthavg)
         return _df, keyword_plan
 
-    def get_historical_metrics_df(self,
-                                  keywords: List[str],
-                                  location_codes: List[str] = None,
+
+    def get_historical_metrics_df_concat_locations(self,
+                                  keywords: list[str],
+                                  location_codes: list[str] = None,
                                   language_id: str = None,
                                   calculated_fields: bool = True,
-                                  max_retries: int = 5) -> Tuple[pd.DataFrame, Any]:
+                                  max_retries: int = 5) -> tuple[pd.DataFrame, list[str]]:
+
+        frames, keyword_plans = [], []
+
+        for _loc_code in location_codes:
+            _df, _keyword_plans = self.get_historical_metrics_df(
+                keywords=keywords,
+                location_codes=[_loc_code],
+                language_id=language_id,
+                calculated_fields=calculated_fields,
+                max_retries=max_retries
+            )
+            if isinstance(_df, pd.DataFrame):
+                frames.append(_df)
+            keyword_plans.extend(_keyword_plans)
+
+        if len(frames) > 0:
+            dataframe = pd.concat(frames)
+        else:
+            dataframe = None
+
+        return dataframe, keyword_plans
+
+    def get_historical_metrics_df(self,
+                                  keywords: list[str],
+                                  location_codes: list[str] = None,
+                                  language_id: str = None,
+                                  calculated_fields: bool = True,
+                                  max_retries: int = 5) -> tuple[pd.DataFrame, list[str]]:
 
         retries: int = 0
         complete: bool = False
         while retries < max_retries and complete is False:
             try:
-                _df, keyword_plan = self._get_historical_metrics_df(
+                _df, _keyword_plan = self._get_historical_metrics_df(
                     keywords=keywords,
                     location_codes=location_codes,
                     language_id=language_id,
@@ -440,10 +505,16 @@ class KeywordPlanService(ClientWrapper):
                 time.sleep(2)
                 retries += 1
 
-        if complete is False:
-            return None, None
+        if complete:
+            _plans = [_keyword_plan]
+        else:
+            _df = None
+            _plans = []
 
-        return _df, keyword_plan
+        if _df is not None:
+            _df.insert(loc=0, column='country_iso_code', value='-'.join(location_codes))
+
+        return _df, _plans
 
     def generate_forecast_metrics(self,
                                   keyword_plan_resource_name: str):
@@ -524,12 +595,12 @@ class KeywordPlanService(ClientWrapper):
         return metrics
 
     def add_keyword_plan(self,
-                         keywords: Union[List[str], str],
+                         keywords: list[str] | str,
                          match_type: str = "EXACT",
-                         cpc_bid_micros: Union[List[int], int] = 10000,
+                         cpc_bid_micros: list[int] | int = 10000,
                          forecast_interval: str = "NEXT_QUARTER",
-                         location_codes: List[str] = None,
-                         language_id: str = None):
+                         location_codes: list[str] = None,
+                         language_id: str = None) -> tuple[str, dict]:
         """
         Adds a keyword plan, campaign, ad group, etc. to the customer account.
 
@@ -563,7 +634,7 @@ class KeywordPlanService(ClientWrapper):
         if isinstance(cpc_bid_micros, int):
             cpc_bid_micros = [cpc_bid_micros] * len(keywords)
 
-        keyword_plan = self._create_keyword_plan(forecast_interval=forecast_interval)
+        keyword_plan: str = self._create_keyword_plan(forecast_interval=forecast_interval)
         keyword_plan_campaign = self._create_keyword_plan_campaign(
             keyword_plan=keyword_plan,
             location_resources=location_resource_names,
@@ -580,7 +651,7 @@ class KeywordPlanService(ClientWrapper):
         )
         return keyword_plan, stripped_keyword_dict
 
-    def _create_keyword_plan(self, forecast_interval: str = "NEXT_QUARTER"):
+    def _create_keyword_plan(self, forecast_interval: str = "NEXT_QUARTER") -> str:
         """Adds a keyword plan to the customer account.
 
         Returns:
@@ -687,8 +758,8 @@ class KeywordPlanService(ClientWrapper):
     def _create_keyword_plan_ad_group_keywords(self,
                                                keyword_plan_ad_group,
                                                match_type: str,
-                                               keyword_texts: List[str],
-                                               cpc_bid_micros: List[int]):
+                                               keyword_texts: list[str],
+                                               cpc_bid_micros: list[int]):
         """Adds keyword plan ad group keywords to the given keyword plan ad group.
 
         Args:
@@ -735,8 +806,8 @@ class KeywordPlanIdeaService(ClientWrapper):
                  googleads_client: GoogleAdsClient,
                  customer_id: str,
                  site_url: str = None,
-                 location_codes: List[str] = None,
-                 language_id: Optional[str] = None
+                 location_codes: list[str] = None,
+                 language_id: str | None = None
                  ):
         super().__init__(googleads_client=googleads_client,
                          customer_id=customer_id,
@@ -754,10 +825,10 @@ class KeywordPlanIdeaService(ClientWrapper):
         )
 
     def generate_keyword_ideas(self,
-                               url: Optional[str] = None,
-                               phrases: Optional[Union[str, List[str]]] = None,
+                               url: str | None = None,
+                               phrases: str | list[str] | None = None,
                                include_adult_keywords: bool = True,
-                               location_codes: List[str] = None,
+                               location_codes: list[str] = None,
                                language_id: str = None) -> pd.DataFrame:
         """
         Use the Google Ads Keyword Planner API to generate keyword ideas based on a URL or a phrase
@@ -840,7 +911,7 @@ class KeywordPlanIdeaService(ClientWrapper):
         return _df
 
 
-def _three_month_trend_coef(volume_trends: List[int]):
+def _three_month_trend_coef(volume_trends: list[int]):
     if not isinstance(volume_trends, list):
         return None
     if len(volume_trends) == 0:
@@ -919,7 +990,7 @@ def _partition_list(_list, n):
     return [_list[n * i:n * i + n] for i in range(ceil(len(_list) / n))]
 
 
-def _conv_date(year, month, day):
+def _conv_date(year, month, day, month_index: int = 0):
     if isinstance(year, float):
         year = int(year)
     if not isinstance(year, int):
@@ -928,11 +999,13 @@ def _conv_date(year, month, day):
         month = int(month)
     if not isinstance(month, int):
         return None
+    if month_index == 0:
+        month += 1
     return datetime.date(year, month, day)
 
 
 def _map_location_to_resource_names(client,
-                                    location_codes: Union[str, List[str]]):
+                                    location_codes: str | list[str]):
     if isinstance(location_codes, str):
         location_codes = [location_codes]
 

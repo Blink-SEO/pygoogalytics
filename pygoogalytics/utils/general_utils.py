@@ -17,6 +17,9 @@ RE_URL_PATH_CAPTURE = re.compile(URL_PATH_CAPTURE)
 RE_C2S = re.compile(r"(?<!^)(?=[A-Z])")
 
 
+def camel_to_snake(string: str):
+    return RE_C2S.sub('_', string).lower()
+
 def strip_url(url: str) -> str:
     url = url.split('?')[0]
     if _match := RE_URL_PATH_CAPTURE.match(url):

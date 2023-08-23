@@ -81,22 +81,26 @@ class GoogalyticsClient:
 class AdsClient:
     def __init__(self,
                  googleads_client: GoogleAdsClient,
-                 default_customer_id: str):
+                 default_customer_id: str = None,
+                 googleads_yaml_dict: dict = None):
         self.googleads_client = googleads_client
         self.default_customer_id = default_customer_id
+        self.googleads_yaml_dict = googleads_yaml_dict
 
     @classmethod
     def build(cls, yaml_key: str = None, key_file_path: str = None):
         if yaml_key:
-            googleads_client, default_customer_id = googleads_client_from_yaml(googleads_yaml_string=yaml_key)
+            googleads_client, default_customer_id, googleads_yaml_dict = googleads_client_from_yaml(googleads_yaml_string=yaml_key)
             pga_logger.info(f"initialised KwpClient object from yaml string")
         elif key_file_path:
-            googleads_client, default_customer_id = googleads_client_from_key_file(path=key_file_path)
+            googleads_client, default_customer_id, googleads_yaml_dict = googleads_client_from_key_file(path=key_file_path)
             pga_logger.info(f"initialised KwpClient object from key file")
         else:
             raise KeyError("either yaml_key or key_file_path must be supplied")
 
-        return cls(googleads_client=googleads_client, default_customer_id=default_customer_id)
+        return cls(googleads_client=googleads_client,
+                   default_customer_id=default_customer_id,
+                   googleads_yaml_dict=googleads_yaml_dict)
 
     def __bool__(self):
         if self.googleads_client is not None:
