@@ -960,6 +960,16 @@ class GoogalyticsWrapper:
         _frames = []
         for _i, url in enumerate(url_list):
             _frames.append(self.urlinspection_dict(url, inspection_index=_i))
-        return pd.DataFrame(_frames)
 
+        if len(_frames) == 0:
+            return pd.DataFrame()
 
+        df = pd.DataFrame(_frames)
+
+        df.rename(columns={'url': 'url_full'}, inplace=True)
+
+        df['url_parameter'] = df['url_full'].apply(general_utils.url_extract_parameter)
+        df['url'] = df['url_full'].apply(general_utils.strip_url)
+        df['url_nodomain'] = df['url_full'].apply(general_utils.url_strip_domain)
+
+        return df
