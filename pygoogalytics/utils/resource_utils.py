@@ -18,18 +18,9 @@ def googleads_client_from_key_file(path: str):
 
 def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str, dict]:
     googleads_yaml_dict = yaml.safe_load(googleads_yaml_string)
-    default_customer_id = parse_ads_id(googleads_yaml_dict.get('default_customer_id'))
-    default_api_version = parse_ads_id(googleads_yaml_dict.get('api_version'))
-    if isinstance(default_api_version, int):
-        _api_version = "v" + str(default_api_version)
-    elif isinstance(default_api_version, str) and len(default_api_version) > 0:
-        if default_api_version[0] == 'v':
-            _api_version = default_api_version
-        else:
-            _api_version = "v" + default_api_version
-    else:
-        _api_version = "v13"
-    googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version=_api_version)
+    default_customer_id = parse_ads_id(googleads_yaml_dict.get('default_customer_id', ''))
+    api_version = parse_api_version(googleads_yaml_dict.get('api_version', 13))
+    googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version=api_version)
     return googleads_client, default_customer_id, googleads_yaml_dict
 
 
@@ -37,6 +28,19 @@ def parse_ads_id(customer_id: str | int) -> str:
     if isinstance(customer_id, int):
         customer_id = str(customer_id)
     return re.sub(r'[^\d]', '', customer_id)
+
+
+def parse_api_version(api_version: str | int) -> str:
+    if isinstance(api_version, int):
+        _api_version = "v" + str(api_version)
+    elif isinstance(api_version, str) and len(api_version) > 0:
+        if default_api_version[0] == 'v':
+            _api_version = api_version
+        else:
+            _api_version = "v" + api_version
+    else:
+        _api_version = "v13"
+    return _api_version
 
 
 def get_analytics_resources(json_api_key: str = None, key_file_path: str = None):
