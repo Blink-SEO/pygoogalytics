@@ -32,11 +32,15 @@ class ClientWrapper:
                  googleads_client: GoogleAdsClient,
                  customer_id: str,
                  location_codes: list[str] | None = None,
-                 language_id: str = None
+                 language_id: str = None,
+                 api_version: str | int = 13
                  ):
         self.client: GoogleAdsClient = googleads_client
         self.customer_id = customer_id
-        self.googleads_service = self.client.get_service("GoogleAdsService")
+
+        if isinstance(api_version, int):
+            api_version = "v" + str(api_version)
+        self.googleads_service = self.client.get_service("GoogleAdsService", version=api_version)
 
         if location_codes is None:
             location_codes = DEFAULT_LOCATIONS

@@ -12,7 +12,7 @@ class AdsWrapper:
                  googleads_client: GoogleAdsClient,
                  customer_id: str,):
         self.client = googleads_client
-        self.service = self.client.get_service("GoogleAdsService")
+        self.service = self.client.get_service("GoogleAdsService", version='v13')
         self.customer_id = customer_id
 
     def get_data(self,

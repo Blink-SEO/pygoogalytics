@@ -19,7 +19,17 @@ def googleads_client_from_key_file(path: str):
 def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str, dict]:
     googleads_yaml_dict = yaml.safe_load(googleads_yaml_string)
     default_customer_id = parse_ads_id(googleads_yaml_dict.get('default_customer_id'))
-    googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version="v12")
+    default_api_version = parse_ads_id(googleads_yaml_dict.get('api_version'))
+    if isinstance(default_api_version, int):
+        _api_version = "v" + str(default_api_version)
+    elif isinstance(default_api_version, str) and len(default_api_version) > 0:
+        if default_api_version[0] == 'v':
+            _api_version = default_api_version
+        else:
+            _api_version = "v" + default_api_version
+    else:
+        _api_version = "v13"
+    googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version=_api_version)
     return googleads_client, default_customer_id, googleads_yaml_dict
 
 
