@@ -99,17 +99,27 @@ class GoogalyticsWrapper:
                 "GSC dates": len(_dates_test.get("GSC")),
                 }
 
-    def _perform_api_test_gsc(self):
+    def _perform_api_test_gsc(self) -> dict:
         """test GSC API"""
         pga_logger.debug(f"{self.__class__.__name__}.api_test() :: testing GSC api")
 
         _api_error = None
+        _dates_list = []
+
+        if not self.sc_domain:
+            return dict(
+                status="SC Domain not set",
+                error="SC Domain not set",
+                date_count=0,
+                timestamp=datetime.datetime.utcnow()
+            )
 
         try:
             _ = self.get_gsc_response(start_date=datetime.date.today() + datetime.timedelta(days=-7),
                                       raise_http_error=True)
             _api_status = "Success"
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GSC api successful")
+            _dates_list = self.get_dates(result="GSC")
         except GoogleApiHttpError as http_e:
             _api_status = "HttpError"
             _api_error = http_e.reason.split('See also')[0]
@@ -121,31 +131,51 @@ class GoogalyticsWrapper:
             # The HttpError for GSC contains this unhelpful "See also this answer to a question..."
             # which is just a link to an FAQ with a 404 error
 
-        self._api_test_gsc = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.utcnow()}
+        return dict(
+            status=_api_status,
+            error=_api_error,
+            date_count=len(_dates_list),
+            timestamp=datetime.datetime.utcnow()
+        )
 
     @property
     def api_test_gsc(self) -> dict:
         if self._api_test_gsc.get('status') is None:
-            self._perform_api_test_gsc()
+            self._api_test_gsc = self._perform_api_test_gsc()
         return self._api_test_gsc
 
     @property
     def api_test_ga3(self) -> dict:
         if self._api_test_ga3.get('status') is None or not general_utils.test_time(self._api_test_ga3.get('timestamp'), 3600):
-            self._perform_api_test_ga3()
+            self._api_test_ga3 = self._perform_api_test_ga3()
         return self._api_test_ga3
 
-    def _perform_api_test_ga3(self):
+    def _perform_api_test_ga3(self) -> dict:
         """test GA API"""
         pga_logger.debug(f"{self.__class__.__name__}.api_test() :: testing GA api")
         _api_error = None
         if not self.view_id:
-            _api_status = "No view id"
+            return dict(
+                status="No View ID",
+                error="GA3 View ID not set",
+                date_count=0,
+                timestamp=datetime.datetime.utcnow()
+            )
+
+        _dates_list = []
         try:
-            _ = self.get_ga3_response(start_date=datetime.date.today() + datetime.timedelta(days=-7),
-                                      raise_http_error=True, log_error=False)
+            _date = datetime.date.today() + datetime.timedelta(days=-7)
+            _ = self.get_ga3_response(
+                start_date=_date,
+                end_date=_date,
+                dimensions=['date'],
+                metrics=['users'],
+                raise_http_error=True,
+                log_error=False
+            )
             _api_status = "Success"
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api successful")
+            _dates_list = self.get_dates(result="GA3")
         except GoogleApiHttpError as http_e:
             _api_status = "HttpError"
             _api_error = repr(http_e)
@@ -154,11 +184,57 @@ class GoogalyticsWrapper:
             _api_status = "Other Error"
             _api_error = repr(http_e)
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA api failed")
-        self._api_test_ga3 = {'status': _api_status, 'error': _api_error, 'timestamp': datetime.datetime.utcnow()}
+        return dict(
+            status=_api_status,
+            error=_api_error,
+            date_count=len(_dates_list),
+            timestamp=datetime.datetime.utcnow()
+        )
 
     @property
     def api_test_ga4(self) -> dict:
+        if self._api_test_ga4.get('status') is None or not general_utils.test_time(self._api_test_ga4.get('timestamp'), 3600):
+            self._api_test_ga4 = self._perform_api_test_ga4()
         return self._api_test_ga4
+
+    def _perform_api_test_ga4(self) -> dict:
+        """test GA4 API"""
+        pga_logger.debug(f"{self.__class__.__name__}.api_test() :: testing GA4 api")
+        _api_error = None
+        if not self.ga4_property_id:
+            return dict(
+                status="No property id",
+                error="Ga4 Property ID not set",
+                date_count=0,
+                timestamp=datetime.datetime.utcnow()
+            )
+
+        _dates_list = []
+        try:
+            _date = datetime.date.today() + datetime.timedelta(days=-7)
+            _ = self.get_ga4_response(
+                start_date=_date,
+                end_date=_date,
+                dimensions=['date'],
+                metrics=['totalUsers']
+            )
+            _api_status = "Success"
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api successful")
+            _dates_list = self.get_dates(result="GA4")
+        except GoogleApiHttpError as http_e:
+            _api_status = "HttpError"
+            _api_error = repr(http_e)
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api failed")
+        except Exception as http_e:
+            _api_status = "Other Error"
+            _api_error = repr(http_e)
+            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api failed")
+        return dict(
+            status=_api_status,
+            error=_api_error,
+            date_count=len(_dates_list),
+            timestamp=datetime.datetime.utcnow()
+        )
 
     # *****************************************************************************************
 
@@ -253,8 +329,8 @@ class GoogalyticsWrapper:
     def get_ga3_response(self,
                          start_date: datetime.date,
                          end_date: datetime.date,
-                         dimensions: list[str] | str | None = None,
-                         metrics: list[str] | str | None = None,
+                         dimensions: list[str] = None,
+                         metrics: list[str] = None,
                          ga_filters: dict | None = None,
                          raise_http_error: bool = False,
                          log_error: bool = True,
@@ -284,7 +360,7 @@ class GoogalyticsWrapper:
             r = self._ga3_response_raw(
                 start_date=start_date,
                 end_date=end_date,
-                ga_dimensions=ga_dimensions,
+                ga_dimensions=ga_dimensionsga_dimensions,
                 ga_metrics=ga_metrics,
                 ga_filters=ga_filters,
                 filter_google_organic=filter_google_organic,
