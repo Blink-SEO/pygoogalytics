@@ -200,7 +200,7 @@ class GoogalyticsWrapper:
     def _perform_api_test_ga4(self) -> dict:
         """test GA4 API"""
         pga_logger.debug(f"{self.__class__.__name__}.api_test() :: testing GA4 api")
-        _api_error = None
+
         if not self.ga4_property_id:
             return dict(
                 status="No property id",
@@ -210,17 +210,31 @@ class GoogalyticsWrapper:
             )
 
         _dates_list = []
+        _error = None
         try:
             _date = datetime.date.today() + datetime.timedelta(days=-7)
-            _ = self.get_ga4_response(
+            _response = self.get_ga4_response(
                 start_date=_date,
                 end_date=_date,
                 dimensions=['date'],
                 metrics=['totalUsers']
             )
-            _api_status = "Success"
-            pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api successful")
-            _dates_list = self.get_dates(result="GA4")
+            _error = _response.get('error')
+            if _error:
+                if isinstance(_error, PermissionDenied):
+                    _api_status = "PermissionDenied"
+                    _api_error = _error.message
+                elif isinstance(_error, InvalidArgument):
+                    _api_status = "InvalidArgument"
+                    _api_error = _error.message
+                else:
+                    _api_status = "Other Error"
+                    _api_error = repr(_error)
+            else:
+                _api_status = "Success"
+                pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api successful")
+                _dates_list = self.get_dates(result="GA4")
+                _api_error = None
         except GoogleApiHttpError as http_e:
             _api_status = "HttpError"
             _api_error = repr(http_e)
@@ -229,6 +243,8 @@ class GoogalyticsWrapper:
             _api_status = "Other Error"
             _api_error = repr(http_e)
             pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api failed")
+
+
         return dict(
             status=_api_status,
             error=_api_error,
