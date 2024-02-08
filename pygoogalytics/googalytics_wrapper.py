@@ -221,15 +221,8 @@ class GoogalyticsWrapper:
             )
             _error = _response.get('error')
             if _error:
-                if isinstance(_error, PermissionDenied):
-                    _api_status = "PermissionDenied"
-                    _api_error = _error.message
-                elif isinstance(_error, InvalidArgument):
-                    _api_status = "InvalidArgument"
-                    _api_error = _error.message
-                else:
-                    _api_status = "Other Error"
-                    _api_error = repr(_error)
+                _api_status = _response.get('error_type')
+                _api_error = str(_error)
             else:
                 _api_status = "Success"
                 pga_logger.debug(f"{self.__class__.__name__}.api_test() :: GA4 api successful")
@@ -594,26 +587,30 @@ class GoogalyticsWrapper:
                     success = True
                 except PermissionDenied as _permission_denied_error:
                     complete = True
-                    error_type = 'permission_denied'
+                    error_type = 'PermissionDenied'
                     error = _permission_denied_error
                     num_tries = 1_000
                 except ResourceExhausted as _resource_exhausted_error:
-                    error_type = 'quota_reached'
+                    error_type = 'ResourceExhausted'
                     complete = True
                     error = _resource_exhausted_error
                     num_tries = 1_000
                 except MissingID as _id_error:
                     complete = True
-                    error_type = 'missing_id'
+                    error_type = 'MissingID'
                     error = _id_error
                     num_tries = 1_000
                 except InvalidArgument as _invalid_argument_error:
+                    error_type = 'InvalidArgument'
                     if re.search(r"metrics are incompatible", _invalid_argument_error.message):
-                        error_type = 'invalid_arguments'
+                        error_type = 'IncompatibleMetrics'
+                    if re.search(r"Invalid property ID", _invalid_argument_error.message):
+                        error_type = 'InvalidPropertyID'
                     complete = True
                     error = _invalid_argument_error
                     num_tries = 1_000
                 except Exception as _e:
+                    error_type = "Error"
                     error = _e
                     num_tries += 1
 
@@ -630,12 +627,12 @@ class GoogalyticsWrapper:
             response = join_ga4_responses(responses)
             if response.get('row_count', 0) == 0:
                 error = AttributeError("Empty response")
-                error_type = "empty_response"
+                error_type = "EmptyResponse"
         elif len(responses) == 1:
             response = responses[0]
             if response.get('row_count', 0) == 0:
                 error = AttributeError("Empty response")
-                error_type = "empty_response"
+                error_type = "EmptyResponse"
         else:
             response = {
                 'response_type': 'GA4',
