@@ -1084,7 +1084,7 @@ class KeywordPlanIdeaService(ClientWrapper):
             _vars = _m.close_variants
             if not _vars:
                 _vars = []
-            _keywords = [_query] + _vars
+            _keywords = [_query] + list(_vars)
 
             for _k in _keywords:
 
