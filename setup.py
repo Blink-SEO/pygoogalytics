@@ -10,7 +10,7 @@ in the form of a pandas dataframe."""
 
 setup(
     name='pygoogalytics',
-    version='0.6.7',
+    version='0.6.8',
     description=_desc,
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
@@ -22,9 +22,9 @@ setup(
     install_requires=[
         'pandas',
         'google-api-python-client>=2.70.0',
-        'google-analytics-data==0.16.1',
-        'google-ads==20.0.0',
-        'google-api-core==2.11.0'
+        'google-analytics-data>=0.16.1',
+        'google-ads>=23.1.0',
+        'google-api-core>=2.11.0'
     ],
     classifiers=[
         "Intended Audience :: Developers",
