@@ -3,7 +3,7 @@ import re
 import operator
 from typing import Any
 
-from google.ads.googleads.v12.services.types.google_ads_service import GoogleAdsRow
+from google.ads.googleads.v15.services.types.google_ads_service import GoogleAdsRow
 
 import pandas as pd
 

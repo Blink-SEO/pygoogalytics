@@ -33,7 +33,7 @@ class ClientWrapper:
                  customer_id: str,
                  location_codes: list[str] | None = None,
                  language_id: str = None,
-                 api_version: str | int = 13
+                 api_version: str | int = 15
                  ):
         self.client: GoogleAdsClient = googleads_client
         self.customer_id = customer_id
@@ -353,7 +353,10 @@ class KeywordPlanService(ClientWrapper):
             if print_progress:
                 print(f"{len(frames)} - obtained metrics for {len(frames[-1])} keywords")
 
-        _df = pd.concat(frames)
+        if len(frames) > 0:
+            _df = pd.concat(frames)
+        else:
+            return None, None
 
         metrics_df: pd.DataFrame = _df.drop(columns=['volume_trend_tuples'])
 
@@ -704,7 +707,7 @@ class KeywordPlanService(ClientWrapper):
         if cpc_bid_micros is None:
             cpc_bid_micros = self.default_keyword_plan_campaign_cpc_bid_micros
 
-        operation = self.client.get_type("KeywordPlanCampaignOperation", version="v12")
+        operation = self.client.get_type("KeywordPlanCampaignOperation", version="v15")
         keyword_plan_campaign = operation.create
 
         keyword_plan_campaign.name = f"Keyword plan campaign {uuid.uuid4()}"
@@ -715,7 +718,7 @@ class KeywordPlanService(ClientWrapper):
         # Other geotarget constants can be referenced here:
         # https://developers.google.com/google-ads/api/reference/data/geotargets
         for _loc in location_resources:
-            geo_target = self.client.get_type("KeywordPlanGeoTarget", version="v12")
+            geo_target = self.client.get_type("KeywordPlanGeoTarget", version="v15")
             # print('geo_target type: ')
             # print(type(geo_target))
             geo_target.geo_target_constant = _loc
@@ -913,6 +916,286 @@ class KeywordPlanIdeaService(ClientWrapper):
         _df["latest_volume"] = _df["volume_trend"].apply(_latest_volume)
 
         return _df
+
+    def generate_historical_metrics(self,
+                                   keywords: str | list[str] | None = None,
+                                   include_adult_keywords: bool = True,
+                                   location_codes: list[str] = None,
+                                   language_id: str = None,
+                                    calculated_fields: bool = True,
+                                    concat_locations: bool = True,
+                                    print_progress: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Use the Google Ads Keyword Planner API to generate keyword ideas based on a URL or a phrase
+        """
+        if isinstance(keywords, str):
+            keywords = [keywords]
+
+        if language_id is None:
+            language_rn = self.language_rn
+        else:
+            language_rn = _map_language_id_to_resource_name(client=self.client,
+                                                            language_id=language_id)
+
+        keyword_list_partition = _partition_list(_list=keywords, n=2_000)
+        frames: list[pd.DataFrame] = []
+
+        for _sublist_index, _keyword_sublist in enumerate(keyword_list_partition):
+            if _sublist_index > 0:
+                time.sleep(API_MULTIPLE_REQUEST_WAIT_TIME)
+
+            try:
+                historical_metrics_df = self._historical_metrics_dataframe(
+                    keywords=_keyword_sublist,
+                    location_codes=location_codes,
+                    language_resource_name=language_rn,
+                    include_adult_keywords=include_adult_keywords,
+                    calculated_fields=calculated_fields,
+                    concat_locations=concat_locations
+                )
+
+                if historical_metrics_df is not None:
+                    frames.append(historical_metrics_df)
+
+            except GoogleAdsException:
+                print(f"GoogleAdsException encountered after obtaining {len(frames)} frames")
+                break
+
+            if print_progress:
+                print(f"{len(frames)} - obtained metrics for {len(frames[-1])} keywords")
+
+        if len(frames) > 0:
+            _df = pd.concat(frames)
+        else:
+            return None, None
+
+        metrics_df: pd.DataFrame = _df.drop(columns=['volume_trend_tuples'])
+
+        monthly_volume_df: pd.DataFrame = _df[['country_iso_code',
+                                               'date_obtained',
+                                               'query',
+                                               'keyword',
+                                               'status',
+                                               'volume_trend_tuples']].explode('volume_trend_tuples')
+
+        monthly_volume_df['volume_trend_tuples'] = monthly_volume_df['volume_trend_tuples'].apply(
+            _check_volume_trend_tuples)
+
+        monthly_volume_df['month_name'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[3])
+        monthly_volume_df['month_enum'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[2])
+        monthly_volume_df['month'] = monthly_volume_df['month_enum'].apply(_get_month_from_enum_value)
+        monthly_volume_df['year'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[1])
+
+        monthly_volume_df.dropna(axis='index', subset=['month'], inplace=True)
+
+        monthly_volume_df['record_date'] = monthly_volume_df.apply(
+            lambda df: _conv_date(df['year'], df['month'], 15, month_index=0),
+            axis=1
+        )
+        monthly_volume_df['volume'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[0])
+
+        monthly_volume_df.drop(
+            columns=['month_enum', 'volume_trend_tuples', 'month', 'year', 'month_name'],
+            inplace=True
+        )
+
+        metrics_df.drop_duplicates(subset=["country_iso_code", "query", "keyword"], keep="first", inplace=True)
+        monthly_volume_df.drop_duplicates(subset=["country_iso_code", "query", "keyword", "record_date"], keep="first", inplace=True)
+
+        metrics_df.reset_index(drop=True, inplace=True)
+        monthly_volume_df.reset_index(drop=True, inplace=True)
+
+        _recent_dates = monthly_volume_df[
+            ["country_iso_code", 'query', 'keyword', 'record_date']
+        ].groupby(by=["country_iso_code", 'query', 'keyword']).max().reset_index()
+
+        _competition_subset = pd.merge(
+            left=_recent_dates,
+            right=metrics_df[["country_iso_code", 'query', 'keyword', 'competition', 'competition_index']],
+            on=["country_iso_code", 'query', 'keyword'],
+            how='inner'
+        )
+
+        metrics_df = pd.merge(left=metrics_df, right=_recent_dates, on=["country_iso_code", 'query', 'keyword'], how='left')
+
+        monthly_volume_df = pd.merge(
+            left=monthly_volume_df,
+            right=_competition_subset,
+            on=["country_iso_code", 'query', 'keyword', 'record_date'],
+            how='left'
+        )
+
+        return metrics_df, monthly_volume_df
+
+
+    def _historical_metrics_response(self,
+                                  keywords: list[str],
+                                  location_resource_names: list,
+                                  language_resource_name: str,
+                                  include_adult_keywords: bool = True):
+        request = self.client.get_type("GenerateKeywordHistoricalMetricsRequest")
+        request.customer_id = self.customer_id
+        request.language = language_resource_name
+        request.geo_target_constants = location_resource_names
+        request.include_adult_keywords = include_adult_keywords
+        request.keyword_plan_network = self.keyword_plan_network
+        request.keywords = keywords
+
+        return self.keyword_plan_idea_service.generate_keyword_historical_metrics(
+            request=request
+        )
+
+    def _historical_metrics_dataframe(self,
+                                  keywords: list[str],
+                                  location_codes: list,
+                                  language_resource_name: str,
+                                  include_adult_keywords: bool = True,
+                                      calculated_fields: bool = True,
+                                      concat_locations: bool = True):
+
+        if location_codes is None:
+            location_codes = self.location_codes
+            location_resource_names = self.location_rns
+        else:
+            location_resource_names = _map_location_to_resource_names(client=self.client,
+                                                                      location_codes=location_codes)
+
+        if concat_locations:
+            return self._historical_metrics_dataframe_concat_locations(
+                keywords=keywords,
+                location_codes=location_codes,
+                language_resource_name=language_resource_name,
+                include_adult_keywords=include_adult_keywords,
+                calculated_fields=calculated_fields
+            )
+
+        response = self._historical_metrics_response(
+            keywords=keywords,
+            location_resource_names=location_resource_names,
+            language_resource_name=language_resource_name,
+            include_adult_keywords=include_adult_keywords
+        )
+
+        _date_today = datetime.date.today()
+
+        metrics = []
+        for _m in response.results:
+            _query= _m.text
+            _vars = _m.close_variants
+            if not _vars:
+                _vars = []
+            _keywords = [_query] + _vars
+
+            for _k in _keywords:
+
+                _metric = {
+                    "date_obtained": _date_today,
+                    "country_iso_code": '-'.join(location_codes),
+                    "query": _query,
+                    "keyword": _k,
+                    "status": "OBTAINED",
+                    "avg_searches": _m.keyword_metrics.avg_monthly_searches,
+                    "competition": _m.keyword_metrics.competition.name,
+                    "competition_index": _m.keyword_metrics.competition_index,
+                    "low_top_of_page_bid_micros": _m.keyword_metrics.low_top_of_page_bid_micros,
+                    "high_top_of_page_bid_micros": _m.keyword_metrics.high_top_of_page_bid_micros,
+                    "volume_trend": [v.monthly_searches for v in _m.keyword_metrics.monthly_search_volumes],
+                    "volume_trend_tuples": [(v.monthly_searches, v.year, v.month.value, v.month.name)
+                                                for v in _m.keyword_metrics.monthly_search_volumes]
+                }
+                metrics.append(_metric)
+
+        empty_metric = {
+            "date_obtained": _date_today,
+            "country_iso_code": '-'.join(location_codes),
+            "query": "",
+            "status": "NOT_OBTAINED",
+            "avg_searches": 0,
+            "competition": "",
+            "competition_index": None,
+            "low_top_of_page_bid_micros": 0,
+            "high_top_of_page_bid_micros": 0,
+            "volume_trend": [],
+            "volume_trend_tuples": []
+        }
+
+        for _missing_keyword in set(keywords) - set(m.get("keyword") for m in metrics):
+            _metric = empty_metric.copy()
+            _metric["keyword"] = _missing_keyword
+            metrics.append(_metric)
+
+        if len(metrics) == 0:
+            df = pd.DataFrame(
+                columns=[
+                    "date_obtained",
+                    "country_iso_code",
+                    "query",
+                    "keyword",
+                    "status",
+                    "avg_searches",
+                    "competition",
+                    "competition_index",
+                    "low_top_of_page_bid_micros",
+                    "high_top_of_page_bid_micros",
+                    "volume_trend",
+                    "volume_trend_tuples"
+                ]
+            )
+        else:
+            df = pd.DataFrame(metrics)
+
+        if calculated_fields:
+            df["volume_trend_coef"] = df["volume_trend"].apply(_three_month_trend_coef)
+            df["volume"] = df["volume_trend"].apply(_latest_volume)
+            df["volume_last_month"] = df["volume_trend"].apply(_previous_volume)
+            df["volume_last_year"] = df["volume_trend"].apply(_last_year_volume)
+            df["volume_3monthavg"] = df["volume_trend"].apply(_volume_3monthavg)
+            df["volume_6monthavg"] = df["volume_trend"].apply(_volume_6monthavg)
+            df["volume_12monthavg"] = df["volume_trend"].apply(_volume_12monthavg)
+
+        return df
+
+    def _historical_metrics_dataframe_concat_locations(self,
+                                                      keywords: list[str],
+                                                      location_codes: list[str],
+                                                      language_resource_name: str,
+                                                      include_adult_keywords: bool = True,
+                                                       calculated_fields: bool = True):
+        frames = []
+        for _loc in location_codes:
+            _df = self._historical_metrics_dataframe(
+                keywords=keywords,
+                location_codes=[_loc],
+                language_resource_name=language_resource_name,
+                include_adult_keywords=include_adult_keywords,
+                calculated_fields=calculated_fields,
+                concat_locations=False
+            )
+            if len(_df) > 0:
+                frames.append(_df)
+
+        if len(frames) > 0:
+            df = pd.concat(frames)
+        else:
+            df = pd.DataFrame(
+                columns=[
+                    "date_obtained",
+                    "country_iso_code",
+                    "query",
+                    "keyword",
+                    "status",
+                    "avg_searches",
+                    "competition",
+                    "competition_index",
+                    "low_top_of_page_bid_micros",
+                    "high_top_of_page_bid_micros",
+                    "volume_trend",
+                    "volume_trend_tuples"
+                ]
+            )
+
+        return df
+
 
 
 def _three_month_trend_coef(volume_trends: list[int]):

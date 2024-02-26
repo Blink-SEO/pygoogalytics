@@ -3,7 +3,7 @@ import re
 
 from .utils import ads_reports_parsing
 from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.v12.services.types.google_ads_service import GoogleAdsRow
+from google.ads.googleads.v15.services.types.google_ads_service import GoogleAdsRow
 
 import pandas as pd
 
@@ -12,7 +12,7 @@ class AdsWrapper:
                  googleads_client: GoogleAdsClient,
                  customer_id: str,):
         self.client = googleads_client
-        self.service = self.client.get_service("GoogleAdsService", version='v13')
+        self.service = self.client.get_service("GoogleAdsService", version='v15')
         self.customer_id = customer_id
 
     def get_data(self,

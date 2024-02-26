@@ -9,6 +9,7 @@ from googleapiclient import discovery  # pip install --upgrade google-api-python
 from google.analytics.data_v1beta import BetaAnalyticsDataClient  # pip install google-analytics-data
 from google.ads.googleads.client import GoogleAdsClient
 
+_default_googleads_api_version = 15
 
 def googleads_client_from_key_file(path: str):
     with open(path, 'rb') as _file:
@@ -19,7 +20,7 @@ def googleads_client_from_key_file(path: str):
 def googleads_client_from_yaml(googleads_yaml_string: str) -> Tuple[GoogleAdsClient, str, dict]:
     googleads_yaml_dict = yaml.safe_load(googleads_yaml_string)
     default_customer_id = parse_ads_id(googleads_yaml_dict.get('default_customer_id', ''))
-    api_version = parse_api_version(googleads_yaml_dict.get('api_version', 13))
+    api_version = parse_api_version(googleads_yaml_dict.get('api_version', _default_googleads_api_version))
     googleads_client = GoogleAdsClient.load_from_string(yaml_str=googleads_yaml_string, version=api_version)
     return googleads_client, default_customer_id, googleads_yaml_dict
 
@@ -39,7 +40,7 @@ def parse_api_version(api_version: str | int) -> str:
         else:
             _api_version = "v" + api_version
     else:
-        _api_version = "v13"
+        _api_version = "v15"
     return _api_version
 
 
