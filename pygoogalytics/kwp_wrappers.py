@@ -917,6 +917,18 @@ class KeywordPlanIdeaService(ClientWrapper):
 
         return _df
 
+    def historical_metrics_generator(self,
+                                     keywords: str | list[str] | None = None,
+                                     include_adult_keywords: bool = True,
+                                     location_codes: list[str] = None,
+                                     language_id: str = None,
+                                     calculated_fields: bool = True,
+                                     concat_locations: bool = True,
+                                     print_progress: bool = False):
+
+        pass
+
+
     def generate_historical_metrics(self,
                                    keywords: str | list[str] | None = None,
                                    include_adult_keywords: bool = True,

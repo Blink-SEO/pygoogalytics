@@ -141,3 +141,5 @@ class AdsClient:
             customer_id = self.default_customer_id
         return AdsWrapper(googleads_client=self.googleads_client,
                           customer_id=parse_ads_id(customer_id))
+
+
