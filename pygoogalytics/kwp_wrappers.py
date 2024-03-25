@@ -1001,7 +1001,7 @@ class KeywordPlanIdeaService(ClientWrapper):
         monthly_volume_df.dropna(axis='index', subset=['month'], inplace=True)
 
         monthly_volume_df['record_date'] = monthly_volume_df.apply(
-            lambda df: _conv_date(df['year'], df['month'], 15, month_index=0),
+            lambda _mvdf: _conv_date(_mvdf['year'], _mvdf['month'], 15, month_index=0),
             axis=1
         )
         monthly_volume_df['volume'] = monthly_volume_df['volume_trend_tuples'].apply(lambda t: t[0])
@@ -1010,6 +1010,21 @@ class KeywordPlanIdeaService(ClientWrapper):
             columns=['month_enum', 'volume_trend_tuples', 'month', 'year', 'month_name'],
             inplace=True
         )
+        monthly_volume_df.fillna(value={'competition': "UNSPECIFIED", 'competition_index': 0.0}, inplace=True)
+
+            # monthly_volume_df = pd.DataFrame(
+            #     columns=[
+            #         "country_iso_code",
+            #         "date_obtained",
+            #         "query",
+            #         "keyword",
+            #         "status",
+            #         "record_date",
+            #         "volume",
+            #         "competition",
+            #         "competition_index"
+            #     ]
+            # )
 
         metrics_df.drop_duplicates(subset=["country_iso_code", "query", "keyword"], keep="first", inplace=True)
         monthly_volume_df.drop_duplicates(subset=["country_iso_code", "query", "keyword", "record_date"], keep="first", inplace=True)
@@ -1115,6 +1130,12 @@ class KeywordPlanIdeaService(ClientWrapper):
                     "volume_trend_tuples": [(v.monthly_searches, v.year, v.month.value, v.month.name)
                                                 for v in _m.keyword_metrics.monthly_search_volumes]
                 }
+
+                if not _metric["volume_trend"]:
+                    _metric["status"] = "NO_VOLUME_DATA"
+                    _metric["volume_trend"] = [0]*12
+                    _metric["volume_trend_tuples"] = _empty_volume_trend_tuples()
+
                 metrics.append(_metric)
 
         empty_metric = {
@@ -1127,8 +1148,8 @@ class KeywordPlanIdeaService(ClientWrapper):
             "competition_index": None,
             "low_top_of_page_bid_micros": 0,
             "high_top_of_page_bid_micros": 0,
-            "volume_trend": [],
-            "volume_trend_tuples": []
+            "volume_trend": [0]*12,
+            "volume_trend_tuples": _empty_volume_trend_tuples()
         }
 
         for _missing_keyword in set(keywords) - set(m.get("keyword") for m in metrics):
@@ -1352,6 +1373,24 @@ def _get_month_from_enum_value(month_enum_value):
         return None
     else:
         return month_enum_value - 2
+
+
+def _add_months(dt: datetime.date, months: int) -> datetime.date:
+    m = dt.month - 1 + months
+    return datetime.date(
+        year=dt.year + m // 12,
+        month=m % 12 + 1,
+        day=dt.day)
+
+
+def _empty_volume_trend_tuples(n: int = 12):
+    _last_month = _add_months(datetime.date.today(), -1)
+    months = [_add_months(datetime.date(_last_month.year, _last_month.month, 15), -i) for i in range(n)]
+    return [(0.0,
+             d.year,
+             d.month + 1,
+             d.strftime('%B').upper()
+             ) for d in months]
 
 
 def strip_illegal_chars(s, language_id):
