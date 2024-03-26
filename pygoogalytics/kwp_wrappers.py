@@ -14,6 +14,7 @@ from google.ads.googleads.client import GoogleAdsClient
 # from google.ads.googleads.v10.resources import KeywordPlanGeoTarget
 from google.ads.googleads.errors import GoogleAdsException
 from google.api_core.exceptions import InternalServerError
+from google.api_core.exceptions import ResourceExhausted
 
 from . import LOCATION_ID_DICT
 
@@ -1068,9 +1069,25 @@ class KeywordPlanIdeaService(ClientWrapper):
         request.keyword_plan_network = self.keyword_plan_network
         request.keywords = keywords
 
-        return self.keyword_plan_idea_service.generate_keyword_historical_metrics(
-            request=request
-        )
+        response = None
+        while response is None:
+            try:
+                response = self.keyword_plan_idea_service.generate_keyword_historical_metrics(
+                    request=request
+                )
+            except ResourceExhausted as _error:
+                response = None
+                if m := re.search(r'Retry in (\d+) seconds', _error.__str__()):
+                    wait_time = int(m.group(1)) + 1
+                else:
+                    wait_time = 5
+
+                print(f"ResourceExhausted encountered :: retrying after {wait_time} seconds")
+
+                time.sleep(wait_time)
+
+        return response
+
 
     def _historical_metrics_dataframe(self,
                                   keywords: list[str],
