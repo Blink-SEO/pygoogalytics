@@ -44,12 +44,20 @@ def parse_api_version(api_version: str | int) -> str:
     return _api_version
 
 
-def get_analytics_resources(json_api_key: str = None, key_file_path: str = None):
+def get_analytics_resources(json_api_key: str | bytes | dict = None, key_file_path: str = None):
     if key_file_path and not json_api_key:
         with open(key_file_path, 'rb') as _file:
             json_api_key = _file.read().decode('utf8')
-    if json_api_key:
-        project_credentials = get_analytics_project_credentials(secrets=json.loads(json_api_key))
+
+    if isinstance(json_api_key, (bytes, str)):
+        secrets = json.loads(json_api_key)
+    elif isinstance(json_api_key, dict):
+        secrets = json_api_key
+    else:
+        secrets = None
+
+    if secrets:
+        project_credentials = get_analytics_project_credentials(secrets=secrets)
     else:
         project_credentials = None
     return build_analytics_resources(analytics_project_credentials=project_credentials)

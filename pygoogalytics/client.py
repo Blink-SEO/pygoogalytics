@@ -31,7 +31,7 @@ class GoogalyticsClient:
         self.ga4_resource = ga4_resource
 
     @classmethod
-    def build(cls, api_key: str = None, key_file_path: str = None):
+    def build(cls, api_key: str | bytes | dict = None, key_file_path: str = None):
         _ga3_resource, _ga4_resource, _gsc_resource = get_analytics_resources(
             json_api_key=api_key, key_file_path=key_file_path
         )
