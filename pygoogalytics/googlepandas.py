@@ -183,6 +183,13 @@ class GADataFrame(pd.DataFrame):
                 self.remove_join_dimensions('sessionSourceMedium')
                 self.add_join_dimensions(['source', 'medium'])
 
+            if 'firstUserSourceMedium' in self.columns:
+                self['source'] = None
+                self['medium'] = None
+                self.drop(columns='firstUserSourceMedium', inplace=True)
+                self.remove_join_dimensions('firstUserSourceMedium')
+                self.add_join_dimensions(['first_user_source', 'first_user_medium'])
+
             if 'transactionsPerSession' in self.columns:
                 self.rename(columns={'transactionsPerSession': 'conversionRate'}, inplace=True)
 
@@ -209,6 +216,12 @@ class GADataFrame(pd.DataFrame):
                 self.drop(columns='dateHour', inplace=True)
                 self.remove_join_dimensions('dateHour')
                 self.add_join_dimensions(['recordDate', 'recordTime'])
+
+            if 'yearWeek' in self.columns:
+                self['recordDate'] = None
+                self.drop(columns='yearWeek', inplace=True)
+                self.remove_join_dimensions('yearWeek')
+                self.add_join_dimensions(['recordDate'])
 
             self.snake_case_join_dimensions()
 
@@ -269,6 +282,13 @@ class GADataFrame(pd.DataFrame):
                 self.remove_join_dimensions('sessionSourceMedium')
                 self.add_join_dimensions(['source', 'medium'])
 
+            if 'firstUserSourceMedium' in self.columns:
+                self['first_user_source'] = self['firstUserSourceMedium'].apply(lambda s: s.split('/')[0].strip())
+                self['first_user_medium'] = self['firstUserSourceMedium'].apply(lambda s: s.split('/')[1].strip() if '/' in s else None)
+                self.drop(columns='firstUserSourceMedium', inplace=True)
+                self.remove_join_dimensions('firstUserSourceMedium')
+                self.add_join_dimensions(['first_user_source', 'first_user_medium'])
+
             if 'date' in self.columns:
                 self.drop(
                     self[self.date.apply(lambda _date: True if _date == '(other)' else False)].index,
@@ -279,6 +299,17 @@ class GADataFrame(pd.DataFrame):
                 self.rename(columns={'date': 'recordDate'}, inplace=True)
                 self.remove_join_dimensions('date')
                 self.add_join_dimensions('recordDate')
+
+            if 'yearWeek' in self.columns:
+                self.drop(
+                    self[self.yearWeek.apply(lambda _date: True if not re.match(r'^\d{6}$', _date) else False)].index,
+                    inplace=True
+                )
+                date_time_series = pd.to_datetime(self.yearWeek.apply(lambda _s: _s+'1'), format="%Y%W%w")
+                self['recordDate'] = date_time_series.apply(lambda date_time: datetime.datetime.date(date_time))
+                self.drop(columns='yearWeek', inplace=True)
+                self.remove_join_dimensions('yearWeek')
+                self.add_join_dimensions(['recordDate'])
 
             if 'dateHourMinute' in self.columns:
                 self.drop(

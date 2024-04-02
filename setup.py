@@ -10,7 +10,7 @@ in the form of a pandas dataframe."""
 
 setup(
     name='pygoogalytics',
-    version='0.6.11',
+    version='0.6.12',
     description=_desc,
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
