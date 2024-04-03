@@ -878,7 +878,8 @@ class GoogalyticsWrapper:
                     filters: Optional[dict] = None,
                     limit: int | None = 100_000_000,
                     return_response: bool = False,
-                    raise_errors: bool = False) -> gpd.GADataFrame:
+                    raise_errors: bool = False,
+                    _print: bool = False) -> gpd.GADataFrame:
 
         if dimensions is None:
             dimensions = ['dateHour']
@@ -936,10 +937,15 @@ class GoogalyticsWrapper:
 
             responses.append(_r)
             if _r.get('error_type') is not None:
-                if _r.get('error_type') != 'empty_response':
+                if _r.get('error_type') in ('empty_response', 'EmptyResponse', 'emptyResponse'):
+                    _r['error_type'] = 'empty_response'
+                else:
                     breaking_error = True
                     breaking_error_type = _r.get('error_type')
+                    if _print:
+                        print(f"Breaking error: {breaking_error_type}")
                     break
+
 
         if return_response:
             return responses
@@ -956,6 +962,11 @@ class GoogalyticsWrapper:
 
         # if len(frames)>0:
         #     return frames
+
+        if _print:
+            print(f"Returned {len(frames)} frames:")
+            for _f in frames:
+                print(f"{len(_f)}: {_f.columns.to_list()}")
 
         if len(frames) == 0:
             dataframe = gpd.GADataFrame(df_input=None,
