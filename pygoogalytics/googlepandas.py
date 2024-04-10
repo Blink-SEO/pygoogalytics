@@ -184,8 +184,8 @@ class GADataFrame(pd.DataFrame):
                 self.add_join_dimensions(['source', 'medium'])
 
             if 'firstUserSourceMedium' in self.columns:
-                self['source'] = None
-                self['medium'] = None
+                self['firstUserSource'] = None
+                self['firstUserMedium'] = None
                 self.drop(columns='firstUserSourceMedium', inplace=True)
                 self.remove_join_dimensions('firstUserSourceMedium')
                 self.add_join_dimensions(['first_user_source', 'first_user_medium'])
@@ -546,6 +546,17 @@ class GADataFrame(pd.DataFrame):
 
         if _e == 'empty_response':
             _e = None
+
+        print("Joining on dimensions:")
+        print(self.join_dimensions)
+        print(dataframe.join_dimensions)
+
+        print("Dataframe columns:")
+        print("Left:")
+        print(self.columns)
+        print("Right:")
+        print(dataframe.columns)
+
 
         _out = GADataFrame(
             df_input=pd.merge(self, dataframe, how=how, on=self.join_dimensions),
