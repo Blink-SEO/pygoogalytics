@@ -547,15 +547,15 @@ class GADataFrame(pd.DataFrame):
         if _e == 'empty_response':
             _e = None
 
-        print("Joining on dimensions:")
-        print(self.join_dimensions)
-        print(dataframe.join_dimensions)
-
-        print("Dataframe columns:")
-        print("Left:")
-        print(self.columns)
-        print("Right:")
-        print(dataframe.columns)
+        # print("Joining on dimensions:")
+        # print(self.join_dimensions)
+        # print(dataframe.join_dimensions)
+        #
+        # print("Dataframe columns:")
+        # print("Left:")
+        # print(self.columns)
+        # print("Right:")
+        # print(dataframe.columns)
 
 
         _out = GADataFrame(
