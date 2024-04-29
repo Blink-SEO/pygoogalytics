@@ -369,7 +369,7 @@ class GoogalyticsWrapper:
             r = self._ga3_response_raw(
                 start_date=start_date,
                 end_date=end_date,
-                ga_dimensions=ga_dimensionsga_dimensions,
+                ga_dimensions=ga_dimensions,
                 ga_metrics=ga_metrics,
                 ga_filters=ga_filters,
                 filter_google_organic=filter_google_organic,
