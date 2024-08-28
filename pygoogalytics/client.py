@@ -3,7 +3,7 @@ from typing import List
 from google.ads.googleads.client import GoogleAdsClient
 
 from pygoogalytics.utils.resource_utils import get_analytics_resources, \
-    googleads_client_from_yaml, googleads_client_from_key_file, parse_ads_id
+    googleads_client_from_yaml, googleads_client_from_key_file, parse_ads_id, get_analytics_resources_oauth
 from .googalytics_wrapper import GoogalyticsWrapper
 from .kwp_wrappers import KeywordPlanIdeaService, KeywordPlanService
 from .ads_wrapper import AdsWrapper
@@ -30,12 +30,40 @@ class GoogalyticsClient:
         self.ga3_resource = ga3_resource
         self.ga4_resource = ga4_resource
 
+        self.sc_domain = None
+        self.view_id = None
+        self.ga4_property_id = None
+
     @classmethod
     def build(cls, api_key: str | bytes | dict = None, key_file_path: str = None):
         _ga3_resource, _ga4_resource, _gsc_resource = get_analytics_resources(
             json_api_key=api_key, key_file_path=key_file_path
         )
         return cls(gsc_resource=_gsc_resource, ga3_resource=_ga3_resource,  ga4_resource=_ga4_resource)
+
+    @classmethod
+    def build_oauth(cls, config: str | bytes | dict, client_id: str, client_secret: str):
+        if isinstance(config, (bytes, str)):
+            config = json.loads(config)
+        if not isinstance(config, dict):
+            raise TypeError("config must be a dict or json str")
+
+        if "google" in config.keys():
+            config = config.get("google")
+
+        if not "oauth" in config.keys():
+            raise ValueError("config must contain 'oauth' key")
+
+        _ga3_resource, _ga4_resource, _gsc_resource = get_analytics_resources_oauth(
+            oauth_config=config, client_id=client_id, client_secret=client_secret
+        )
+
+        client = cls(gsc_resource=_gsc_resource, ga3_resource=_ga3_resource,  ga4_resource=_ga4_resource)
+
+        client.sc_domain = config.get("searchConsole", {}).get("siteUrl")
+        client.ga4_property_id = config.get("analytics4", {}).get("propertyId")
+
+        return client
 
     def wrapper(self,
                 sc_domain: str = None,
@@ -53,9 +81,9 @@ class GoogalyticsClient:
             gsc_resource=self.gsc_resource,
             ga3_resource=self.ga3_resource,
             ga4_resource=self.ga4_resource,
-            sc_domain=sc_domain,
-            view_id=view_id,
-            ga4_property_id=ga4_property_id
+            sc_domain=sc_domain or self.sc_domain,
+            view_id=view_id or self.view_id,
+            ga4_property_id=ga4_property_id or self.ga4_property_id
         )
 
     def __bool__(self):
