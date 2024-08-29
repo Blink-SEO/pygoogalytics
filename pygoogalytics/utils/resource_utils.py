@@ -4,12 +4,20 @@ import re
 
 from typing import Tuple
 
-from google.oauth2 import service_account  # pip install --upgrade google-auth
+from google.oauth2 import service_account, credentials  # pip install --upgrade google-auth
+
 from googleapiclient import discovery  # pip install --upgrade google-api-python-client
 from google.analytics.data_v1beta import BetaAnalyticsDataClient  # pip install google-analytics-data
 from google.ads.googleads.client import GoogleAdsClient
 
 _default_googleads_api_version = 15
+
+_analytics_project_scopes = [
+    'https://www.googleapis.com/auth/analytics.readonly',
+    'https://www.googleapis.com/auth/webmasters.readonly',
+    'https://www.googleapis.com/auth/webmasters',
+    'https://www.googleapis.com/auth/cloud-platform'
+]
 
 def googleads_client_from_key_file(path: str):
     with open(path, 'rb') as _file:
@@ -57,25 +65,43 @@ def get_analytics_resources(json_api_key: str | bytes | dict = None, key_file_pa
         secrets = None
 
     if secrets:
-        project_credentials = get_analytics_project_credentials(secrets=secrets)
+        project_credentials = service_account.Credentials.from_service_account_info(
+            info=secrets
+        ).with_scopes(
+            scopes=_analytics_project_scopes
+        )
     else:
         project_credentials = None
-    return build_analytics_resources(analytics_project_credentials=project_credentials)
+
+    ga3_resource = build_resource("GA3", project_credentials)
+    ga4_resource = build_resource("GA4", project_credentials)
+    gsc_resource = build_resource("GSC", project_credentials)
+
+    return ga3_resource, ga4_resource, gsc_resource
+
+def get_analytics_resources_oauth(oauth_config: dict, client_id: str, client_secret: str):
+    project_credentials = credentials.Credentials(
+        token=oauth_config.get("accessToken"),
+        refresh_token=oauth_config.get("refreshToken"),
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=client_id,
+        client_secret=client_secret,
+        # scopes=_analytics_project_scopes  # Scopes are not needed when using oauth
+    )
+
+    ga3_resource = build_resource("GA3", project_credentials)
+    ga4_resource = build_resource("GA4", project_credentials)
+    gsc_resource = build_resource("GSC", project_credentials)
+
+    return ga3_resource, ga4_resource, gsc_resource
 
 
-def get_analytics_project_credentials(secrets: dict):
-    analytics_project_scopes = ['https://www.googleapis.com/auth/analytics.readonly',
-                                'https://www.googleapis.com/auth/webmasters.readonly',
-                                'https://www.googleapis.com/auth/webmasters',
-                                'https://www.googleapis.com/auth/cloud-platform']
-
-    project_credentials = service_account.Credentials.from_service_account_info(
-        info=secrets).with_scopes(scopes=analytics_project_scopes)
-    return project_credentials
-
-
-def build_analytics_resources(analytics_project_credentials: service_account.Credentials = None):
-    ga3_resource = discovery.build('analyticsreporting', 'v4', credentials=analytics_project_credentials)
-    gsc_resource = discovery.build('searchconsole', 'v1', credentials=analytics_project_credentials)
-    ga4_data_client = BetaAnalyticsDataClient(credentials=analytics_project_credentials)
-    return ga3_resource, ga4_data_client, gsc_resource
+def build_resource(_type: str, creds: service_account.Credentials = None):
+    if _type == "GA3":
+        return discovery.build('analyticsreporting', 'v4', credentials=creds)
+    elif _type == "GSC":
+        return discovery.build('searchconsole', 'v1', credentials=creds)
+    elif _type == "GA4":
+        return BetaAnalyticsDataClient(credentials=creds)
+    else:
+        raise ValueError("Unsupported resource type")
