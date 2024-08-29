@@ -59,6 +59,10 @@ def date_range_string(dates: List[datetime.date],
 def date_range(dates: List[datetime.date]) -> Tuple[datetime.date, datetime.date, int, float]:
     _max = max(dates)
     _min = min(dates)
+
+    if _min == _max:
+        return _min, _max, 1, 1
+
     _days = (_max - _min).days
     _coverage = len(set(dates))/_days
     return _min, _max, _days, _coverage

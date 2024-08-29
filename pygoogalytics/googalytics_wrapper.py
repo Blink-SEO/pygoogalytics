@@ -693,7 +693,7 @@ class GoogalyticsWrapper:
                           metrics=metrics,
                           add_boolean_metrics=False)
 
-        if "record_date" not in _df.columns or len(_df) == 0:
+        if _df is None or "record_date" not in _df.columns or len(_df) == 0:
             return []
 
         if "record_date" not in _df.columns or len(_df) == 0:
@@ -849,6 +849,9 @@ class GoogalyticsWrapper:
                     row_limit: int = 200000,
                     gsc_dimensions: Optional[List[str]] = None,
                     add_boolean_metrics: bool = True) -> Optional[gpd.GSCDataFrame]:
+
+        if not self.sc_domain:
+            return None
 
         if gsc_dimensions is None:
             gsc_dimensions = ['date', 'country', 'device', 'page', 'query']
