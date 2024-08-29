@@ -55,7 +55,7 @@ class GoogalyticsClient:
             raise ValueError("config must contain 'oauth' key")
 
         _ga3_resource, _ga4_resource, _gsc_resource = get_analytics_resources_oauth(
-            oauth_config=config, client_id=client_id, client_secret=client_secret
+            oauth_config=config.get("oauth"), client_id=client_id, client_secret=client_secret
         )
 
         client = cls(gsc_resource=_gsc_resource, ga3_resource=_ga3_resource,  ga4_resource=_ga4_resource)
