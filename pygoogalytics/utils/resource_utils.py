@@ -82,11 +82,11 @@ def get_analytics_resources(json_api_key: str | bytes | dict = None, key_file_pa
 def get_analytics_resources_oauth(oauth_config: dict, client_id: str, client_secret: str):
     project_credentials = credentials.Credentials(
         token=oauth_config.get("accessToken"),
-        refresh_token=oauth_config.get("refreshToken"),  # Optional
+        refresh_token=oauth_config.get("refreshToken"),
         token_uri='https://oauth2.googleapis.com/token',
         client_id=client_id,
         client_secret=client_secret,
-        scopes=_analytics_project_scopes
+        # scopes=_analytics_project_scopes  # Scopes are not needed when using oauth
     )
 
     ga3_resource = build_resource("GA3", project_credentials)
